@@ -1,124 +1,15 @@
-use std::fmt::{Error, format};
-use crossterm::{
-    event::{self, KeyCode, KeyEventKind},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    ExecutableCommand,
-};
-use ratatui::{
-    prelude::{CrosstermBackend, Stylize, Terminal},
-    widgets::Paragraph,
-};
-use std::io::{stdout, Result};
-use ratatui::prelude::*;
-use ratatui::widgets::*;
+mod commands;
+mod project;
 
-mod github_handler;
-mod app;
+const FIELDS: &str = r#"{"fields":[{"id":"PVTF_lAHOBaITmc4AXboQzgO-mpE","name":"Title","type":"ProjectV2Field"},{"id":"PVTF_lAHOBaITmc4AXboQzgO-mpI","name":"Assignees","type":"ProjectV2Field"},{"id":"PVTSSF_lAHOBaITmc4AXboQzgO-mpM","name":"Status","type":"ProjectV2SingleSelectField","options":[{"id":"f75ad846","name":"Todo"},{"id":"47fc9ee4","name":"In Progress"},{"id":"63391554","name":"Polish"},{"id":"98236657","name":"Done"}]},{"id":"PVTF_lAHOBaITmc4AXboQzgO-mpQ","name":"Labels","type":"ProjectV2Field"},{"id":"PVTF_lAHOBaITmc4AXboQzgO-mpU","name":"Linked pull requests","type":"ProjectV2Field"},{"id":"PVTF_lAHOBaITmc4AXboQzgO-mpc","name":"Reviewers","type":"ProjectV2Field"},{"id":"PVTF_lAHOBaITmc4AXboQzgO-mpg","name":"Repository","type":"ProjectV2Field"},{"id":"PVTF_lAHOBaITmc4AXboQzgO-mpk","name":"Milestone","type":"ProjectV2Field"},{"id":"PVTSSF_lAHOBaITmc4AXboQzgO_tJ0","name":"Relation","type":"ProjectV2SingleSelectField","options":[{"id":"0fdd9085","name":"Bug"},{"id":"98375b4e","name":"Object-Related"},{"id":"acdc128c","name":"Map-Related"},{"id":"8dc75662","name":"Player-Related"},{"id":"7db4c501","name":"Multiplayer"}]},{"id":"PVTSSF_lAHOBaITmc4AXboQzgO_tV0","name":"Difficulty","type":"ProjectV2SingleSelectField","options":[{"id":"7af4abd5","name":"Hard"},{"id":"e54db9e9","name":"Medium"},{"id":"34812b38","name":"Easy"},{"id":"17231891","name":"Quick Change"}]},{"id":"PVTSSF_lAHOBaITmc4AXboQzgO_uOQ","name":"Priority","type":"ProjectV2SingleSelectField","options":[{"id":"6ce28fac","name":"Urgent"},{"id":"6ebf7860","name":"Top Priority"},{"id":"d9fc3b7a","name":"Mid Priority"},{"id":"589ff404","name":"Low Priority"},{"id":"d256c3b6","name":"Idea"}]}],"totalCount":11}"#;
+const ITEMS: &str = r#"{"items":[{"assignees":["rhaskia"],"content":{"type":"Issue","body":"","title":"Item Grabbing","number":2,"repository":"rhaskia/Backrooms-Survival","url":"https://github.com/rhaskia/Backrooms-Survival/issues/2"},"difficulty":"Medium","id":"PVTI_lAHOBaITmc4AXboQzgKPsEI","priority":"Mid Priority","relation":"Object-Related","repository":"https://github.com/rhaskia/Backrooms-Survival","status":"Polish","title":"Item Grabbing"},{"content":{"type":"DraftIssue","body":"","title":"Item Dropping"},"difficulty":"Medium","id":"PVTI_lAHOBaITmc4AXboQzgKPsFs","priority":"Mid Priority","relation":"Object-Related","status":"Polish","title":"Item Dropping"},{"content":{"type":"DraftIssue","body":"","title":"Item Rotation"},"difficulty":"Medium","id":"PVTI_lAHOBaITmc4AXboQzgKPsGA","priority":"Mid Priority","relation":"Object-Related","status":"Todo","title":"Item Rotation"},{"content":{"type":"DraftIssue","body":"","title":"Object Pooling"},"difficulty":"Hard","id":"PVTI_lAHOBaITmc4AXboQzgKPsNA","priority":"Mid Priority","relation":"Map-Related","status":"Todo","title":"Object Pooling"},{"content":{"type":"DraftIssue","body":"","title":"Jumping"},"difficulty":"Medium","id":"PVTI_lAHOBaITmc4AXboQzgKPtIs","priority":"Mid Priority","relation":"Player-Related","status":"Todo","title":"Jumping"},{"content":{"type":"DraftIssue","body":"","title":"Walking"},"difficulty":"Easy","id":"PVTI_lAHOBaITmc4AXboQzgKPtI4","priority":"Low Priority","relation":"Player-Related","status":"Polish","title":"Walking"},{"content":{"type":"DraftIssue","body":"","title":"Running"},"difficulty":"Easy","id":"PVTI_lAHOBaITmc4AXboQzgKPtI8","priority":"Low Priority","relation":"Player-Related","status":"Polish","title":"Running"},{"content":{"type":"DraftIssue","body":"","title":"Crouching"},"difficulty":"Medium","id":"PVTI_lAHOBaITmc4AXboQzgKPtJA","priority":"Low Priority","relation":"Player-Related","status":"Polish","title":"Crouching"},{"content":{"type":"DraftIssue","body":"","title":"Map Loading"},"difficulty":"Hard","id":"PVTI_lAHOBaITmc4AXboQzgKPtN0","priority":"Mid Priority","relation":"Map-Related","status":"Polish","title":"Map Loading"},{"content":{"type":"DraftIssue","body":"","title":"Map Calculations"},"difficulty":"Hard","id":"PVTI_lAHOBaITmc4AXboQzgKPtOA","priority":"Mid Priority","relation":"Map-Related","status":"Polish","title":"Map Calculations"},{"content":{"type":"DraftIssue","body":"","title":"Lobby"},"difficulty":"Hard","id":"PVTI_lAHOBaITmc4AXboQzgKPtQA","relation":"Multiplayer","status":"Polish","title":"Lobby"},{"content":{"type":"DraftIssue","body":"","title":"Start Menu"},"difficulty":"Hard","id":"PVTI_lAHOBaITmc4AXboQzgKPtQk","relation":"Multiplayer","status":"Polish","title":"Start Menu"},{"content":{"type":"DraftIssue","body":"","title":"Grab UI"},"difficulty":"Medium","id":"PVTI_lAHOBaITmc4AXboQzgKP37w","priority":"Low Priority","relation":"Object-Related","status":"In Progress","title":"Grab UI"},{"content":{"type":"DraftIssue","body":"","title":"Chunk Increase Size"},"difficulty":"Quick Change","id":"PVTI_lAHOBaITmc4AXboQzgKP38A","priority":"Low Priority","relation":"Map-Related","status":"Todo","title":"Chunk Increase Size"},{"content":{"type":"DraftIssue","body":"","title":"Movement Sync"},"id":"PVTI_lAHOBaITmc4AXboQzgKPtQs","relation":"Multiplayer","status":"Polish","title":"Movement Sync"},{"content":{"type":"DraftIssue","body":"","title":"Item Sync"},"id":"PVTI_lAHOBaITmc4AXboQzgKPtQw","relation":"Multiplayer","status":"Todo","title":"Item Sync"},{"content":{"type":"DraftIssue","body":"","title":"UI Sync"},"id":"PVTI_lAHOBaITmc4AXboQzgKZ7ZA","relation":"Object-Related","title":"UI Sync"},{"content":{"type":"DraftIssue","body":"","title":"Chunk Loading Multithreading"},"difficulty":"Hard","id":"PVTI_lAHOBaITmc4AXboQzgKkue4","priority":"Low Priority","relation":"Map-Related","status":"Todo","title":"Chunk Loading Multithreading"},{"content":{"type":"DraftIssue","body":"","title":"Game Menu"},"difficulty":"Medium","id":"PVTI_lAHOBaITmc4AXboQzgKku18","priority":"Low Priority","relation":"Player-Related","status":"In Progress","title":"Game Menu"}],"totalCount":19}"#;
 
-use github_handler::*;
-use serde_json::Value;
 
-fn cleaned_items() -> Vec<Value> {
-    let items_wrapper = serde_json::from_str::<Value>(&item_list()).unwrap();
 
-    let items_object =
-        if let Value::Object(o) = items_wrapper
-        { o.get("items").unwrap().clone() }
-        else { panic!("Unexpected Result"); };
+fn main() {
+    let fields = serde_json::from_str::<project::Fields>(FIELDS).unwrap();
+    let items = serde_json::from_str::<project::Items>(ITEMS).unwrap();
 
-    items_object.as_array().unwrap().clone()
-}
-
-fn cleaned_fields() -> Vec<Value> {
-    let fields_wrapper = serde_json::from_str::<Value>(&field_list()).unwrap();
-
-    let fields_object =
-        if let Value::Object(o) = fields_wrapper
-        { o.get("fields").unwrap().clone() }
-        else { panic!("Unexpected Result"); };
-
-    fields_object.as_array().unwrap().clone()
-}
-
-fn main() -> Result<()> {
-    stdout().execute(EnterAlternateScreen)?;
-    enable_raw_mode()?;
-    let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
-    terminal.clear()?;
-
-    let fields = get_values(cleaned_fields());
-
-    loop {
-        terminal.draw(|frame| {
-            let layout = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(vec![
-                    Constraint::Length(3),
-                    Constraint::Max(1000),
-                    Constraint::Length(3),
-                ])
-                .split(frame.size());
-
-            let title_block = Block::default()
-                .borders(Borders::ALL)
-                .style(Style::default());
-
-            let title = Paragraph::new(Text::styled(
-                "Create New Json",
-                Style::default().fg(Color::Green),
-            ))
-                .block(title_block);
-
-            frame.render_widget(title, layout[0]);
-
-            //frame.render_widget(draw_table(cleaned_items(), cleaned_fields()), layout[1])
-        })?;
-
-        if event::poll(std::time::Duration::from_millis(16))? {
-            if let event::Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press && key.code == KeyCode::Char('q') {
-                    break;
-                }
-            }
-        }
-    }
-
-    stdout().execute(LeaveAlternateScreen)?;
-    disable_raw_mode()?;
-    Ok(())
-}
-
-fn get_values(vec: Vec<Value>, key: &str) -> Vec<Value> {
-    vec.iter()
-        .map(|map| (*map.as_object().unwrap().get(key).unwrap()).clone())
-        .collect()
-}
-fn draw_table(items: Vec<Value>, fields: Vec<Value>) -> Table<'static> {
-    let field_names = get_values(fields, "name");
-
-    let header_cells = field_names
-        .iter()
-        .map(|h| Cell::from((*h.as_str().unwrap()).to_owned())
-        .style(Style::default().fg(Color::Red)));
-
-    let header = Row::new(header_cells)
-        .height(1)
-        .bottom_margin(0);
-
-    let rows = (0..5).map(|item| {
-        let cells = (2..8).map(|c| Cell::from(format!("{c}")));
-        Row::new(cells).height(1).bottom_margin(1)
-    });
-
-    Table::new(rows)
-        .header(header)
-        .block(Block::default().borders(Borders::ALL).title("Table"))
-        .highlight_symbol(">> ")
-        .widths(&[
-            Constraint::Min(8),
-            Constraint::Min(8),
-            Constraint::Min(8),
-            Constraint::Min(8),
-            Constraint::Min(8),
-        ])
+    println!("{:#?}", fields);
+    println!("{:#?}", items);
 }
