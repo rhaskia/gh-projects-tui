@@ -29,7 +29,7 @@ pub(crate) fn draw(items: project::Items, fields: project::Fields, projects: pro
                 .direction(Direction::Vertical)
                 .constraints(vec![
                     Constraint::Length(3),
-                    Constraint::Max(1000),
+                    Constraint::Min(1),
                     Constraint::Length(3),
                 ])
                 .split(frame.size());
@@ -107,6 +107,7 @@ fn get_widths(fields: &project::Fields) -> Vec<Constraint> {
 fn draw_table<'a>(rows: Vec<Row<'a>>, header: Row<'a>) -> Table<'a>{
     Table::new(rows)
         .header(header)
-        .block(Block::default().borders(Borders::TOP).title("Table"))
+        .block(Block::default()
+        .borders(Borders::TOP).title("Table"))
         .highlight_symbol(">> ")
 }
