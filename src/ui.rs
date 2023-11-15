@@ -21,8 +21,8 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     terminal.clear()?;
 
-    let rows = get_rows(&app.items, &app.fields);
-    let headers = get_headers(&app.fields);
+    //let rows = get_rows(&app.items, &app.fields);
+    //let headers = get_headers(&app.fields);
     let widths = get_widths(&app.fields, &app.items);
 
     loop {
@@ -32,7 +32,7 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
                 .constraints(vec![
                     Constraint::Length(2),
                     Constraint::Min(5),
-                    Constraint::Length(3),
+                    Constraint::Length(2),
                 ])
                 .split(frame.size());
 
@@ -51,7 +51,7 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
             let lists_layout = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints(widths.clone())
-                .split(layout[1].inner(&Margin::new(1, 1)));
+                .split(layout[1].inner(&Margin::new(1, 2)));
 
             let border_set = symbols::border::Set {
                 top_right: symbols::line::NORMAL.vertical_left,
@@ -61,6 +61,10 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
 
             frame.render_widget(Block::new().borders(Borders::ALL).border_set(border_set), layout[1]);
 
+            frame.render_widget(Tabs::new(get_headers(&app, &widths))
+                                    .divider("|"),
+                                layout[1].inner(&Margin::new(1, 1)));
+
             // TODO: custom index list
             for i in 0..app.fields.len() {
                 if i == app.column_state {
@@ -68,7 +72,9 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
                                                  lists_layout[i], &mut app.item_state);
                 }
                 else {
-                    frame.render_widget(draw_list(&app.items, &app.fields, i), lists_layout[i]);
+                    frame.render_stateful_widget(draw_list(&app.items, &app.fields, i)
+                                                     .highlight_style(Style::not_reversed(Default::default())),
+                                                 lists_layout[i], &mut app.item_state.clone());
                 }
             }
 
@@ -94,6 +100,12 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
     Ok(())
 }
 
+fn get_headers(app: &App, widths: &Vec<Constraint>) -> Vec<String> {
+    app.fields.iter().map(|f|
+        f.name.clone()
+    ).collect()
+}
+
 fn draw_list<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> List<'a> {
     List::new(get_column(items, fields, index))
         .block(Block::default())
@@ -107,17 +119,12 @@ fn get_info_text(app: &App) -> String {
 fn get_column<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> Vec<ListItem<'a>> {
     let index_field = fields[index].name.to_ascii_lowercase();
 
-    let mut c = items.iter()
+    items.iter()
         .map(|item|
             ListItem::new(item.fields.get(&*index_field)
                 .unwrap_or(&Value::Bool(false))
                 .as_str().unwrap_or("")))
-        .collect::<Vec<ListItem<'a>>>();
-
-    c.insert(0,
-             ListItem::new(fields[index].name.clone())
-             .style(Style::new().blue()));
-    c
+        .collect()
 }
 
 fn get_rows<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>) -> Vec<Row<'a>> {
@@ -131,17 +138,6 @@ fn get_rows<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>) -> Vec<Row<'a>> {
 
         Row::new(cells).height(1).bottom_margin(0)
     }).collect()
-}
-
-fn get_headers(fields: &Vec<Field>) -> Row {
-    let header_cells = fields
-        .iter()
-        .map(|h| Cell::from(h.name.clone())
-            .style(Style::default().fg(Color::Red)));
-
-    Row::new(header_cells)
-        .height(1)
-        .bottom_margin(0)
 }
 
 fn get_widths(fields: &Vec<Field>, items: &Vec<Item>) -> Vec<Constraint> {
