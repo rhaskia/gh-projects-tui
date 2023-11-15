@@ -10,15 +10,24 @@ use std::io::prelude::*;
 //     String::from_utf8(run_command(r#"gh project field-list 1 --owner rhaskia --format json"#).stdout).unwrap()
 // }
 
-fn run_command(c: &str) -> String {
+#[derive(Debug)]
+pub enum COutput {
+    Err(String),
+    Out(String),
+    None
+}
+
+pub(crate) fn run(c: &str) -> COutput {
     let windows = cfg!(target_os = "windows");
 
-    String::from_utf8(
-    Command::new(if windows { "cmd" } else { "sh" })
+    let output = Command::new(if windows { "cmd" } else { "sh" })
         .arg(if windows { "/C" } else { "-c" })
         .arg(c)
         .output()
-        .expect("Command Failed")
-        .stdout
-    ).unwrap()
+        .expect("Command Failed");
+
+    match output.status.code().unwrap() {
+        0 => { COutput::Out( String::from_utf8(output.stdout).unwrap() ) },
+        _ => { COutput::Err( String::from_utf8(output.stderr).unwrap() ) }
+    }
 }
