@@ -71,6 +71,8 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
                     frame.render_widget(draw_list(&app.items, &app.fields, i), lists_layout[i]);
                 }
             }
+
+            frame.render_widget(Paragraph::new(get_info_text(&app)), layout[2]);
         })?;
 
         if event::poll(std::time::Duration::from_millis(16))? {
@@ -95,7 +97,11 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
 fn draw_list<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> List<'a> {
     List::new(get_column(items, fields, index))
         .block(Block::default())
-        .highlight_style(Style::new().black().on_yellow())
+        .highlight_style(Style::new().reversed())
+}
+
+fn get_info_text(app: &App) -> String {
+    format!("{}/{:?}", app.column_state, app.item_state.selected())
 }
 
 fn get_column<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> Vec<ListItem<'a>> {
@@ -107,8 +113,10 @@ fn get_column<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) ->
                 .unwrap_or(&Value::Bool(false))
                 .as_str().unwrap_or("")))
         .collect::<Vec<ListItem<'a>>>();
-    
-    c.insert(0, ListItem::new(fields[index].name.clone()));
+
+    c.insert(0,
+             ListItem::new(fields[index].name.clone())
+             .style(Style::new().blue()));
     c
 }
 
