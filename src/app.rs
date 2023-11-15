@@ -1,9 +1,16 @@
 use ratatui::widgets::ListState;
 use crate::project::{Field, Item, ProjectInfo};
 
+pub enum Menu {
+    Items,
+    Fields,
+}
+
 pub(crate) struct App {
-    pub state: ListState,
+    pub item_state: ListState,
+    pub field_state: ListState,
     pub column_state: usize,
+    pub menu_state: Menu,
     pub items: Vec<Item>,
     pub fields: Vec<Field>,
     pub projects: Vec<ProjectInfo>
@@ -12,7 +19,9 @@ pub(crate) struct App {
 impl App {
     pub fn new(items: Vec<Item>, fields: Vec<Field>, projects: Vec<ProjectInfo>) -> Self {
         App {
-            state: ListState::default(),
+            item_state: ListState::default().with_selected(Some(0)),
+            field_state: ListState::default().with_selected(Some(0)),
+            menu_state: Menu::Items,
             column_state: 0,
             items,
             fields,
@@ -34,7 +43,7 @@ impl App {
     }
 
     pub fn next(&mut self) {
-        let i = match self.state.selected() {
+        let i = match self.item_state.selected() {
             Some(i) => {
                 if i >= self.items.len() - 1 {
                     0
@@ -44,11 +53,11 @@ impl App {
             }
             None => 0,
         };
-        self.state.select(Some(i));
+        self.item_state.select(Some(i));
     }
 
     pub fn previous(&mut self) {
-        let i = match self.state.selected() {
+        let i = match self.item_state.selected() {
             Some(i) => {
                 if i == 0 {
                     self.items.len() - 1
@@ -58,6 +67,6 @@ impl App {
             }
             None => 0,
         };
-        self.state.select(Some(i));
+        self.item_state.select(Some(i));
     }
 }

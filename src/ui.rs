@@ -65,16 +65,12 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
             for i in 0..app.fields.len() {
                 if i == app.column_state {
                     frame.render_stateful_widget(draw_list(&app.items, &app.fields, i),
-                                                 lists_layout[i], &mut app.state);
+                                                 lists_layout[i], &mut app.item_state);
                 }
                 else {
                     frame.render_widget(draw_list(&app.items, &app.fields, i), lists_layout[i]);
                 }
             }
-
-            //frame.render_stateful_widget(draw_table(rows.clone(), headers.clone()).widths(&widths),
-            //                             layout[1], &mut state);
-            //frame.render_stateful_widget()
         })?;
 
         if event::poll(std::time::Duration::from_millis(16))? {
@@ -98,21 +94,22 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
 
 fn draw_list<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> List<'a> {
     List::new(get_column(items, fields, index))
-        .block(Block::default()
-            .title(fields[index].name.clone())
-            .title_style(Style::new().blue()))
+        .block(Block::default())
         .highlight_style(Style::new().black().on_yellow())
 }
 
 fn get_column<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> Vec<ListItem<'a>> {
     let index_field = fields[index].name.to_ascii_lowercase();
 
-    items.iter()
+    let mut c = items.iter()
         .map(|item|
             ListItem::new(item.fields.get(&*index_field)
                 .unwrap_or(&Value::Bool(false))
                 .as_str().unwrap_or("")))
-        .collect()
+        .collect::<Vec<ListItem<'a>>>();
+    
+    c.insert(0, ListItem::new(fields[index].name.clone()));
+    c
 }
 
 fn get_rows<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>) -> Vec<Row<'a>> {
