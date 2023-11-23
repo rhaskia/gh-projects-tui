@@ -22,8 +22,9 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
     terminal.clear()?;
 
     //let rows = get_rows(&app.items, &app.fields);
-    //let headers = get_headers(&app.fields);
-    let widths = get_widths(&app.fields, &app.items);
+    let n_widths =  get_widths(&app.fields, &app.items);
+    let headers = get_headers(&app, &n_widths);
+    let widths = constrained_widths(n_widths);
 
     loop {
         terminal.draw(|frame| {
@@ -61,7 +62,9 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
 
             frame.render_widget(Block::new().borders(Borders::ALL).border_set(border_set), layout[1]);
 
-            frame.render_widget(Tabs::new(get_headers(&app, &widths))
+            frame.render_widget(Tabs::new(headers.clone())
+                                    .padding("", "")
+                                    .highlight_style(Style::new().red())
                                     .divider("|"),
                                 layout[1].inner(&Margin::new(1, 1)));
 
@@ -100,9 +103,9 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
     Ok(())
 }
 
-fn get_headers(app: &App, widths: &Vec<Constraint>) -> Vec<String> {
-    app.fields.iter().map(|f|
-        f.name.clone()
+fn get_headers(app: &App, widths: &Vec<u16>) -> Vec<String> {
+    (0..app.fields.len()).map(|i|
+        format!("{: <w$}", app.fields[i].name.clone(), w=(widths[i] as usize - 1))
     ).collect()
 }
 
@@ -140,10 +143,15 @@ fn get_rows<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>) -> Vec<Row<'a>> {
     }).collect()
 }
 
-fn get_widths(fields: &Vec<Field>, items: &Vec<Item>) -> Vec<Constraint> {
+fn constrained_widths(i: Vec<u16>) -> Vec<Constraint> {
+    i.iter().map(|f|
+         Constraint::Min(*f)
+    ).collect()
+}
+
+fn get_widths(fields: &Vec<Field>, items: &Vec<Item>) -> Vec<u16> {
     fields
         .iter().map(|field|
-        Constraint::Min(
         cmp::max(field.name.len(),
         match &field.options {
             // has options
@@ -162,7 +170,7 @@ fn get_widths(fields: &Vec<Field>, items: &Vec<Item>) -> Vec<Constraint> {
                         .as_str().unwrap_or("")
                         .len();
                     if l > max { l } else { max }}),
-        }) as u16 + 1)
+        }) as u16 + 1
     ).collect()
 }
 
