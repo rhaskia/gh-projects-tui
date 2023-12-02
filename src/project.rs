@@ -1,5 +1,5 @@
-use serde_json::*;
 use serde::{Deserialize, Serialize};
+use serde_json::*;
 
 #[derive(Debug, Deserialize)]
 pub struct Project {

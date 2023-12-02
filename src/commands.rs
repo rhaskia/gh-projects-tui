@@ -1,6 +1,6 @@
-use std::process::Command;
 use std::fs::OpenOptions;
 use std::io::prelude::*;
+use std::process::Command;
 
 // pub(crate) fn item_list() -> String {
 //     String::from_utf8(run_command(r#"gh project item-list 1 --owner rhaskia --format json"#)).unwrap()
@@ -14,7 +14,7 @@ use std::io::prelude::*;
 pub enum COutput {
     Err(String),
     Out(String),
-    None
+    None,
 }
 
 pub(crate) fn run(c: &str) -> COutput {
@@ -27,7 +27,7 @@ pub(crate) fn run(c: &str) -> COutput {
         .expect("Command Failed");
 
     match output.status.code().unwrap() {
-        0 => { COutput::Out( String::from_utf8(output.stdout).unwrap() ) },
-        _ => { COutput::Err( String::from_utf8(output.stderr).unwrap() ) }
+        0 => COutput::Out(String::from_utf8(output.stdout).unwrap()),
+        _ => COutput::Err(String::from_utf8(output.stderr).unwrap()),
     }
 }
