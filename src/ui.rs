@@ -1,9 +1,8 @@
-use crate::app;
-use crate::app::App;
-use crate::project::{Field, Item, ProjectInfo};
-use crossterm::event::KeyEvent;
+use crate::app::{App, InputMode, normal_mode_keys, insert_mode_keys};
+use crate::project::{Field, Item};
+
 use crossterm::{
-    event::{self, KeyCode, KeyEventKind},
+    event::{self, KeyEventKind},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
@@ -19,7 +18,7 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
     terminal.clear()?;
 
     //let rows = get_rows(&app.items, &app.()fields);
-    let mut n_widths = get_widths(&app.fields, &app.items);
+    let n_widths = get_widths(&app.fields, &app.items);
     let headers = get_headers(&app, &n_widths);
     let mut offset = 0;
     let widths = constrained_widths(&n_widths);
@@ -93,14 +92,15 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
                 );
             }
 
-            for i in 0..offset {
-                frame.render_stateful_widget(
-                    draw_list(&app.items, &app.fields, i)
-                        .highlight_style(Style::not_reversed(Default::default())),
-                    lists_layout[app.fields.len() - offset + i],
-                    &mut list_state.clone(),
-                );
-            }
+            // Wrapped Items
+            // for i in 0..offset {
+            //     frame.render_stateful_widget(
+            //         draw_list(&app.items, &app.fields, i)
+            //             .highlight_style(Style::not_reversed(Default::default())),
+            //         lists_layout[app.fields.len() - offset + i],
+            //         &mut list_state.clone(),
+            //     );
+            // }
 
             frame.render_widget(Paragraph::new(get_info_text(&app)), layout[2]);
         })?;
@@ -109,8 +109,8 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
             if let event::Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
                     match &app.menu_state {
-                        app::InputMode::Normal => normal_mode_keys(key, &mut app),
-                        _ => insert_mode_keys(key),
+                        InputMode::Normal => normal_mode_keys(key, &mut app),
+                        _ => insert_mode_keys(key, &mut app),
                     }
                 }
             }
@@ -143,22 +143,6 @@ fn split_shift(v: &Vec<Constraint>, index: usize) -> Vec<Constraint> {
     new_vec.extend_from_slice(before);
 
     new_vec
-}
-
-
-fn manage_editing_ui() {
-
-}
-
-fn insert_mode_keys(key: KeyEvent) {}
-
-fn normal_mode_keys(key: KeyEvent, app: &mut App) {
-    if key.code == KeyCode::Char('q') { app.exit = true; }
-
-    if key.code == KeyCode::Char('j') { app.next(); }
-    if key.code == KeyCode::Char('k') { app.previous(); }
-    if key.code == KeyCode::Char('h') { app.left(); }
-    if key.code == KeyCode::Char('l') { app.right(); }
 }
 
 fn get_headers(app: &App, widths: &Vec<u16>) -> Vec<String> {
