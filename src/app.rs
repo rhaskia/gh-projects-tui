@@ -34,28 +34,28 @@ impl App {
 
     pub fn right(&mut self) {
         self.column_state += 1;
-        if self.column_state > self.fields.len() {
+        if self.column_state >= self.fields.len() {
             self.column_state = 0;
         }
     }
 
     pub fn left(&mut self) {
         self.column_state = match self.column_state {
-            0 => self.fields.len(),
+            0 => self.fields.len() - 1,
             _ => self.column_state - 1,
         };
     }
 
     pub fn next(&mut self) {
         self.item_state += 1;
-        if self.item_state > self.items.len() {
+        if self.item_state >= self.items.len() {
             self.item_state = 0;
         }
     }
 
     pub fn previous(&mut self) {
         self.item_state = match self.item_state {
-            0 => self.items.len(),
+            0 => self.items.len() - 1,
             _ => self.item_state - 1,
         };
     }

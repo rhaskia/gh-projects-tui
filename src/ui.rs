@@ -1,5 +1,5 @@
-use crate::app::App;
 use crate::app;
+use crate::app::App;
 use crate::project::{Field, Item, ProjectInfo};
 use crossterm::event::KeyEvent;
 use crossterm::{
@@ -18,10 +18,11 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     terminal.clear()?;
 
-    //let rows = get_rows(&app.items, &app.fields);
-    let n_widths = get_widths(&app.fields, &app.items);
+    //let rows = get_rows(&app.items, &app.()fields);
+    let mut n_widths = get_widths(&app.fields, &app.items);
     let headers = get_headers(&app, &n_widths);
-    let widths = constrained_widths(n_widths);
+    let mut offset = 0;
+    let widths = constrained_widths(&n_widths);
 
     loop {
         terminal.draw(|frame| {
@@ -46,11 +47,15 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
 
             frame.render_widget(title, layout[0]);
 
+            offset = find_minimum_width(&n_widths, app.column_state, layout[1].width - 10);
+
+            // Layout for Lists
             let lists_layout = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints(widths.clone())
-                .split(layout[1].inner(&Margin::new(1, 2)));
+                .constraints(split_shift(&widths, offset))
+                .split(layout[1].inner(&Margin::new(1, 1)));
 
+            // Draw List Border
             let border_set = symbols::border::Set {
                 top_right: symbols::line::NORMAL.vertical_left,
                 top_left: symbols::line::NORMAL.vertical_right,
@@ -62,33 +67,39 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
                 layout[1],
             );
 
+            let mut scrolled = layout[1].clone();
+
+            // Tabs Drawing
             frame.render_widget(
-                Tabs::new(headers.clone())
+                Tabs::new(headers[offset..].to_owned())
                     .padding("", "")
-                    .select(app.column_state)
+                    .select(app.column_state - offset)
                     .highlight_style(Style::new().red())
                     .divider("|"),
-                layout[1].inner(&Margin::new(1, 1)),
+                scrolled.inner(&Margin::new(1, 0)),
             );
 
             // TODO: custom index list
             let list_state = ListState::default().with_selected(Some(app.item_state.clone()));
 
-            for i in 0..app.fields.len() {
-                if i == app.column_state {
-                    frame.render_stateful_widget(
-                        draw_list(&app.items, &app.fields, i),
-                        lists_layout[i],
-                        &mut list_state.clone(),
-                    );
-                } else {
-                    frame.render_stateful_widget(
-                        draw_list(&app.items, &app.fields, i)
-                            .highlight_style(Style::not_reversed(Default::default())),
-                        lists_layout[i],
-                        &mut list_state.clone(),
-                    );
-                }
+            for i in offset..app.fields.len() {
+                frame.render_stateful_widget(
+                    draw_list(&app.items, &app.fields, i)
+                        .highlight_style(
+                            if i == app.column_state { Style::reversed(Default::default()) }
+                            else { Style::not_reversed(Default::default()) }),
+                    lists_layout[i - offset],
+                    &mut list_state.clone(),
+                );
+            }
+
+            for i in 0..offset {
+                frame.render_stateful_widget(
+                    draw_list(&app.items, &app.fields, i)
+                        .highlight_style(Style::not_reversed(Default::default())),
+                    lists_layout[app.fields.len() - offset + i],
+                    &mut list_state.clone(),
+                );
             }
 
             frame.render_widget(Paragraph::new(get_info_text(&app)), layout[2]);
@@ -115,32 +126,46 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
     Ok(())
 }
 
+fn find_minimum_width(widths: &Vec<u16>, state: usize, max_width: u16) -> usize {
+    for i in 0..widths.len() {
+        if widths[i..state+1].iter().sum::<u16>() < max_width { return i; }
+    }
+
+    0
+}
+
+
+fn split_shift(v: &Vec<Constraint>, index: usize) -> Vec<Constraint> {
+    let (before, after) = v.split_at(index);
+
+    let mut new_vec = Vec::<Constraint>::new();
+    new_vec.extend_from_slice(after);
+    new_vec.extend_from_slice(before);
+
+    new_vec
+}
+
+
+fn manage_editing_ui() {
+
+}
+
 fn insert_mode_keys(key: KeyEvent) {}
 
 fn normal_mode_keys(key: KeyEvent, app: &mut App) {
-    if key.code == KeyCode::Char('q') {
-        app.exit = true;
-    }
+    if key.code == KeyCode::Char('q') { app.exit = true; }
 
-    if key.code == KeyCode::Char('j') {
-        app.next();
-    }
-    if key.code == KeyCode::Char('k') {
-        app.previous();
-    }
-    if key.code == KeyCode::Char('h') {
-        app.left();
-    }
-    if key.code == KeyCode::Char('l') {
-        app.right();
-    }
+    if key.code == KeyCode::Char('j') { app.next(); }
+    if key.code == KeyCode::Char('k') { app.previous(); }
+    if key.code == KeyCode::Char('h') { app.left(); }
+    if key.code == KeyCode::Char('l') { app.right(); }
 }
 
 fn get_headers(app: &App, widths: &Vec<u16>) -> Vec<String> {
     (0..app.fields.len())
         .map(|i| {
             format!(
-                "{: <w$}",
+                "{:─<w$}",
                 app.fields[i].name.clone(),
                 w = (widths[i] as usize - 1)
             )
@@ -195,7 +220,7 @@ fn get_rows<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>) -> Vec<Row<'a>> {
         .collect()
 }
 
-fn constrained_widths(i: Vec<u16>) -> Vec<Constraint> {
+fn constrained_widths(i: &Vec<u16>) -> Vec<Constraint> {
     i.iter().map(|f| Constraint::Min(*f)).collect()
 }
 

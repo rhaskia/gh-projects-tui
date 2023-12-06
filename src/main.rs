@@ -18,5 +18,3 @@ fn main() {
     let app = App::new(items, fields, projects);
     ui::draw(app).expect("UI Drawing Failed");
 }
-
-
