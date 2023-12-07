@@ -58,7 +58,7 @@ pub struct Field {
     //type: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct FieldOption {
     id: String,
     pub(crate) name: String,

@@ -46,7 +46,7 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
 
             frame.render_widget(title, layout[0]);
 
-            offset = find_minimum_width(&n_widths, app.column_state, layout[1].width - 10);
+            offset = find_minimum_offset(&n_widths, app.column_state, layout[1].width - 10);
 
             // Layout for Lists
             let lists_layout = Layout::default()
@@ -102,6 +102,44 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
             //     );
             // }
 
+            frame.render_widget(Paragraph::new(">"), Rect::new(0, app.item_state as u16 + 3, 1, 1));
+
+            if app.menu_state == InputMode::Input {
+                let mut position = lists_layout[app.column_state - offset].clone();
+
+                if let Some(ref options) = app.input.current_options {
+
+                    //if app.item_state
+
+                    position.y = position.y + (app.item_state as u16) - (app.input.current_option as u16) - 1;
+
+
+                    position.x -= 1;
+                    position.width += 1;
+                    position.height = options.len() as u16 + 1;
+
+                    let block = Block::new().borders(Borders::ALL);
+
+                    let option_names = options.iter().map(|n| n.name.clone()).collect::<Vec<String>>();
+
+                    frame.render_widget(Paragraph::new(option_names.join("\n"))
+                        .wrap(Wrap { trim: true })
+                        .block(block), position);
+                }
+                else {
+                    position.y = position.y + (app.item_state as u16);
+                    position.height = 1;
+
+                    frame.render_widget(Clear, position);
+
+                    frame.render_widget(Paragraph::new(app.input.current_input.clone())
+                                            .style(Style::red(Default::default())),
+                                        position);
+
+                    frame.set_cursor(position.x + app.input.cursor_pos, position.y);
+                }
+            }
+
             frame.render_widget(Paragraph::new(get_info_text(&app)), layout[2]);
         })?;
 
@@ -126,7 +164,7 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
     Ok(())
 }
 
-fn find_minimum_width(widths: &Vec<u16>, state: usize, max_width: u16) -> usize {
+fn find_minimum_offset(widths: &Vec<u16>, state: usize, max_width: u16) -> usize {
     for i in 0..widths.len() {
         if widths[i..state+1].iter().sum::<u16>() < max_width { return i; }
     }
@@ -164,7 +202,7 @@ fn draw_list<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> 
 }
 
 fn get_info_text(app: &App) -> String {
-    format!("{}/{:?}", app.column_state, app.item_state)
+    format!("{}/{:?}: {}", app.column_state, app.item_state, app.input.current_option)
 }
 
 fn get_column<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> Vec<ListItem<'a>> {
