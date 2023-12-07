@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::*;
 
@@ -74,7 +75,7 @@ pub struct Item {
     content: Content,
     id: String,
     #[serde(flatten)]
-    pub(crate) fields: Map<String, Value>,
+    pub(crate) fields: HashMap<String, Value>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

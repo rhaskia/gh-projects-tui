@@ -75,14 +75,14 @@ impl App {
 
     pub fn shift_option_up(&mut self) {
         self.input.current_option = match self.input.current_option {
-            0 => self.input.current_options.as_ref().unwrap().len() - 2,
+            0 => self.input.current_options.as_ref().unwrap().len() - 1,
             _ => self.input.current_option - 1,
         };
     }
 
     pub fn shift_option_down(&mut self) {
         self.input.current_option += 1;
-        if self.input.current_option >= self.input.current_options.as_ref().unwrap().len() - 1 {
+        if self.input.current_option >= self.input.current_options.as_ref().unwrap().len() {
             self.input.current_option = 0;
         }
     }
@@ -122,6 +122,35 @@ impl App {
     pub fn cursor_right(&mut self) {
         if self.input.cursor_pos != self.input.current_input.len() as u16 { self.input.cursor_pos += 1; }
     }
+
+    pub fn save_field(&mut self, s: String) {
+        self.set_field_at(self.item_state, self.column_state, s);
+    }
+
+    pub fn set_string(&mut self) {
+        self.save_field(self.input.current_input.clone())
+    }
+
+    pub fn set_option(&mut self) {
+        if let Some(ref options) = self.input.current_options {
+            self.save_field(options[self.input.current_option].name.clone());
+        }
+    }
+
+    pub fn set_field_at(&mut self, item: usize, field: usize, input: String) {
+        let index_field = self.fields[field].name.to_ascii_lowercase();
+        self.items[item].fields
+            .insert(index_field, Value::String(input));
+    }
+
+    pub fn get_field_at(&self, item: usize, field: usize) -> &str {
+        let index_field = self.fields[field].name.to_ascii_lowercase();
+        self.items[item].fields
+            .get(&*index_field)
+            .unwrap_or(&Value::Bool(false))
+            .as_str()
+            .unwrap_or("")
+    }
 }
 
 pub fn insert_mode_keys(key: KeyEvent, app: &mut App) {
@@ -135,6 +164,8 @@ pub fn insert_mode_keys(key: KeyEvent, app: &mut App) {
             KeyCode::Char('j') | KeyCode::Down => { app.shift_option_down(); }
             KeyCode::Char('k') | KeyCode::Up => { app.shift_option_up(); }
 
+            KeyCode::Enter => { app.set_option() }
+
             _ => {}
         }
     }
@@ -142,6 +173,8 @@ pub fn insert_mode_keys(key: KeyEvent, app: &mut App) {
         match key.code {
             KeyCode::Char(a) => { app.insert_char(a); }
             KeyCode::Backspace => { app.backspace(); }
+
+            KeyCode::Enter => { app.set_string() }
 
             KeyCode::Left => { app.cursor_left(); }
             KeyCode::Right => { app.cursor_right(); }

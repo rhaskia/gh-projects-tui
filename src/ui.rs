@@ -112,21 +112,21 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
 
                     //if app.item_state
 
-                    position.y = position.y + (app.item_state as u16) - (app.input.current_option as u16) - 1;
+                    position.y = position.y + (app.item_state as u16); //- (app.input.current_option as u16);
 
                     position.x -= 1;
                     position.width += 1;
-                    position.height = options.len() as u16 + 1;
+                    position.height = options.len() as u16;
 
-                    let block = Block::new().borders(Borders::ALL);
+                    let block = Block::new().borders(Borders::LEFT | Borders::RIGHT);
 
-                    let option_names = options.iter().map(|n| n.name.clone()).collect::<Vec<String>>();
+                    let option_names: Vec<ListItem> = options.iter().map(|n| ListItem::new(n.name.clone())).collect();
 
                     frame.render_widget(Clear, position);
 
-                    frame.render_widget(Paragraph::new(option_names.join("\n"))
-                        .wrap(Wrap { trim: true })
-                        .block(block), position);
+                    frame.render_stateful_widget(List::new(option_names).block(block)
+                                                     .highlight_style(Style::new().reversed()),
+                                                 position, &mut state_wrapper(app.input.current_option));
                 }
                 else {
                     position.y = position.y + (app.item_state as u16);
@@ -167,6 +167,10 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
     Ok(())
 }
 
+fn state_wrapper(i: usize) -> ListState {
+    ListState::default().with_selected(Some(i))
+}
+
 fn find_minimum_offset(widths: &Vec<u16>, state: usize, max_width: u16) -> usize {
     for i in 0..widths.len() {
         if widths[i..state+1].iter().sum::<u16>() < max_width { return i; }
@@ -205,7 +209,7 @@ fn draw_list<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> 
 }
 
 fn get_info_text(app: &App) -> String {
-    format!("{}/{:?}: {}", app.column_state, app.item_state, app.input.current_option)
+    format!("{}/{:?}: {:?}", app.column_state, app.item_state, app.items[app.item_state].fields.get(&app.fields[app.column_state].name))
 }
 
 fn get_column<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> Vec<ListItem<'a>> {
