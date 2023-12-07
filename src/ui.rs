@@ -102,7 +102,8 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
             //     );
             // }
 
-            frame.render_widget(Paragraph::new(">"), Rect::new(0, app.item_state as u16 + 3, 1, 1));
+            let cursor_pos = layout[1].height.min(app.item_state as u16 + 3);
+            frame.render_widget(Paragraph::new(">"), Rect::new(0, cursor_pos, 1, 1));
 
             if app.menu_state == InputMode::Input {
                 let mut position = lists_layout[app.column_state - offset].clone();
@@ -113,7 +114,6 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
 
                     position.y = position.y + (app.item_state as u16) - (app.input.current_option as u16) - 1;
 
-
                     position.x -= 1;
                     position.width += 1;
                     position.height = options.len() as u16 + 1;
@@ -121,6 +121,8 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
                     let block = Block::new().borders(Borders::ALL);
 
                     let option_names = options.iter().map(|n| n.name.clone()).collect::<Vec<String>>();
+
+                    frame.render_widget(Clear, position);
 
                     frame.render_widget(Paragraph::new(option_names.join("\n"))
                         .wrap(Wrap { trim: true })
@@ -131,6 +133,7 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
                     position.height = 1;
 
                     frame.render_widget(Clear, position);
+
 
                     frame.render_widget(Paragraph::new(app.input.current_input.clone())
                                             .style(Style::red(Default::default())),
