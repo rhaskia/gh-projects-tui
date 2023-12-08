@@ -11,7 +11,7 @@ pub enum InputMode {
 
 pub(crate) struct App {
     pub item_state: usize,
-    pub column_state: usize,
+    pub field_state: usize,
     pub menu_state: InputMode,
     pub exit: bool,
 
@@ -33,7 +33,7 @@ impl App {
     pub fn new(items: Vec<Item>, fields: Vec<Field>, projects: Vec<ProjectInfo>) -> Self {
         App {
             item_state: 0,
-            column_state: 0,
+            field_state: 0,
 
             menu_state: InputMode::Normal,
             exit: false,
@@ -46,16 +46,16 @@ impl App {
     }
 
     pub fn right(&mut self) {
-        self.column_state += 1;
-        if self.column_state >= self.fields.len() {
-            self.column_state = 0;
+        self.field_state += 1;
+        if self.field_state >= self.fields.len() {
+            self.field_state = 0;
         }
     }
 
     pub fn left(&mut self) {
-        self.column_state = match self.column_state {
+        self.field_state = match self.field_state {
             0 => self.fields.len() - 1,
-            _ => self.column_state - 1,
+            _ => self.field_state - 1,
         };
     }
 
@@ -90,7 +90,7 @@ impl App {
     pub fn begin_editing(&mut self) {
         self.menu_state = InputMode::Input;
 
-        let index_field = self.fields[self.column_state].name.to_ascii_lowercase();
+        let index_field = self.fields[self.field_state].name.to_ascii_lowercase();
 
         self.input.current_input = String::from(
             self.items[self.item_state]
@@ -100,7 +100,7 @@ impl App {
 
         self.input.cursor_pos = self.input.current_input.len() as u16;
 
-        self.input.current_options = self.fields[self.column_state].options.clone();
+        self.input.current_options = self.fields[self.field_state].options.clone();
     }
 
     pub fn backspace(&mut self) {
@@ -124,7 +124,10 @@ impl App {
     }
 
     pub fn save_field(&mut self, s: String) {
-        self.set_field_at(self.item_state, self.column_state, s);
+        self.set_field_at(self.item_state, self.field_state, s);
+
+        // TODO github commands
+        // Offline Saving
     }
 
     pub fn set_string(&mut self) {
@@ -159,7 +162,7 @@ pub fn insert_mode_keys(key: KeyEvent, app: &mut App) {
         _ => {},
     }
 
-    if app.fields[app.column_state].options.is_some() {
+    if app.fields[app.field_state].options.is_some() {
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => { app.shift_option_down(); }
             KeyCode::Char('k') | KeyCode::Up => { app.shift_option_up(); }

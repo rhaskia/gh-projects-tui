@@ -46,7 +46,7 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
 
             frame.render_widget(title, layout[0]);
 
-            offset = find_minimum_offset(&n_widths, app.column_state, layout[1].width - 10);
+            offset = find_minimum_offset(&n_widths, app.field_state, layout[1].width - 10);
 
             // Layout for Lists
             let lists_layout = Layout::default()
@@ -72,7 +72,7 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
             frame.render_widget(
                 Tabs::new(headers[offset..].to_owned())
                     .padding("", "")
-                    .select(app.column_state - offset)
+                    .select(app.field_state - offset)
                     .highlight_style(Style::new().red())
                     .divider("|"),
                 scrolled.inner(&Margin::new(1, 0)),
@@ -85,7 +85,7 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
                 frame.render_stateful_widget(
                     draw_list(&app.items, &app.fields, i)
                         .highlight_style(
-                            if i == app.column_state { Style::reversed(Default::default()) }
+                            if i == app.field_state { Style::reversed(Default::default()) }
                             else { Style::not_reversed(Default::default()) }),
                     lists_layout[i - offset],
                     &mut list_state.clone(),
@@ -106,7 +106,7 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
             frame.render_widget(Paragraph::new(">"), Rect::new(0, cursor_pos, 1, 1));
 
             if app.menu_state == InputMode::Input {
-                let mut position = lists_layout[app.column_state - offset].clone();
+                let mut position = lists_layout[app.field_state - offset].clone();
 
                 if let Some(ref options) = app.input.current_options {
 
@@ -209,7 +209,7 @@ fn draw_list<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> 
 }
 
 fn get_info_text(app: &App) -> String {
-    format!("{}/{:?}: {:?}", app.column_state, app.item_state, app.items[app.item_state].fields.get(&app.fields[app.column_state].name))
+    format!("{}/{:?}: {:?}", app.field_state, app.item_state, app.items[app.item_state].fields.get(&app.fields[app.field_state].name))
 }
 
 fn get_column<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> Vec<ListItem<'a>> {
