@@ -1,3 +1,12 @@
+// TODO: fix on release
+#![allow(dead_code)]
+#![allow(unused_assignments)]
+#![allow(unused_attributes)]
+#![allow(unused_imports)]
+#![allow(unused_macros)]
+#![allow(unused_mut)]
+#![allow(unused_variables)]
+
 use crate::app::{App, InputMode, normal_mode_keys, insert_mode_keys};
 use crate::project::{Field, Item};
 

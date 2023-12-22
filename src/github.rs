@@ -1,11 +1,23 @@
+// TODO: fix on release
+#![allow(dead_code)]
+#![allow(unused_assignments)]
+#![allow(unused_attributes)]
+#![allow(unused_imports)]
+#![allow(unused_macros)]
+#![allow(unused_mut)]
+#![allow(unused_variables)]
+
 const CLIENT_ID: &str = include_str!("client_id");
 const CLIENT_SECRET: &str = include_str!("client_secret");
 
+use anyhow::anyhow;
 use github_device_flow::authorize;
 use reqwest::blocking::Response;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_str, Value};
 use std::fs;
+
+use crate::project::*;
 
 #[derive(Debug, Serialize)]
 struct AccessTokenRequest {
@@ -15,94 +27,22 @@ struct AccessTokenRequest {
     grant_type: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct User {
-    pub login: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all(serialize = "snake_case"))]
-pub struct Item {
-    pub id: String,
-    pub fieldValues: Vec<Value>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Project {
-    pub id: String,
-    pub title: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-pub enum Field {
-    ProjectV2Field(ProjectV2Field),
-    ProjectV2IterationField(ProjectV2IterationField),
-    ProjectV2SingleSelectField(ProjectV2SingleSelectField),
-    Empty,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProjectV2Field {
-    pub id: String,
-    pub name: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Iteration {
-    pub startDate: String,
-    pub id: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProjectV2IterationField {
-    pub id: String,
-    pub name: String,
-    pub configuration: IterationConfig,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct IterationConfig {
-    pub iterations: Vec<Iteration>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Option {
-    id: String,
-    name: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProjectV2SingleSelectField {
-    pub id: String,
-    pub name: String,
-    pub options: Vec<Option>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Card {
-    pub url: String,
-    pub id: u32,
-    pub note: String,
-    pub creator: User,
-}
 
 use serde_json::{from_value, json};
 
-pub fn send_query_request(token: &str, query: &str) -> Response {
+pub fn send_query_request(token: &str, query: &str) -> anyhow::Result<Response> {
     let client = reqwest::blocking::Client::new();
 
     // Make the POST request
-    client
+    Ok(client
         .post("https://api.github.com/graphql")
         .header(reqwest::header::AUTHORIZATION, format!("Bearer {}", token))
         .header(reqwest::header::USER_AGENT, "Projects TUI")
         .json(&serde_json::json!({ "query": query }))
-        .send()
-        .expect("Failed to request")
+        .send()?)
 }
 
-pub fn get_user(token: &str) -> User {
+pub fn get_user(token: &str) -> anyhow::Result<User> {
     let client = reqwest::blocking::Client::new();
 
     let response = client
@@ -113,38 +53,35 @@ pub fn get_user(token: &str) -> User {
         .header("User-Agent", "Projects-TUI")
         .send();
 
-    response
-        .expect("Request failed")
-        .json::<User>()
-        .expect("Failed to convert to json")
+    Ok(response?.json::<User>()?)
 }
 
-pub fn get_project_ids(token: &str, login: &str) -> Vec<Project> {
+pub fn get_project_ids(token: &str, login: &str) -> Result<Vec<Project>, anyhow::Error> {
     let query =
         "{user(login: \"USER\") {projectsV2(first: 20) {nodes {id title}}}}".replace("USER", login);
 
-    let res = send_query_request(token, &query);
+    let res = send_query_request(token, &query)?;
 
-    let res_json = res.json::<serde_json::Value>().unwrap();
+    let res_json = res.json::<serde_json::Value>()?;
 
     let values = res_json
         .get("data")
         .and_then(|v| v.get("user"))
         .and_then(|v| v.get("projectsV2"))
         .and_then(|v| v.get("nodes"))
-        .unwrap()
+        .ok_or_else(|| anyhow!("JSON object did not contain items"))?
         .as_array()
-        .unwrap();
+        .ok_or_else(|| anyhow!("JSON object could not be turned into array"))?;
 
     // return values turned into a Vec<Project> instead of a Vec<Value>
-    values
+    Ok(values
         .iter()
         .map(|c| from_value(c.clone()).expect("Broken project struct"))
-        .collect()
+        .collect())
 }
 
 /// Returns all fields that a project has
-pub fn fetch_project_fields(token: &str, project_id: &str) -> Vec<Field> {
+pub fn fetch_project_fields(token: &str, project_id: &str) -> Result<Vec<Field>, anyhow::Error> {
     let graphql_query = json!({
         "query": r#"
             query {
@@ -172,7 +109,7 @@ pub fn fetch_project_fields(token: &str, project_id: &str) -> Vec<Field> {
                                     options {
                                         id
                                         name
-                                    ]}
+                                    }
                                 }
                             }
                         }
@@ -188,29 +125,24 @@ pub fn fetch_project_fields(token: &str, project_id: &str) -> Vec<Field> {
         .header("Authorization", format!("Bearer {}", token))
         .header("User-Agent", "Projects TUI")
         .json(&graphql_query)
-        .send();
+        .send()?;
 
-    let response_json: Value = response.unwrap().json().unwrap();
+    let response_json: Value = response.json()?;
 
     let nodes = rip_data(&response_json, "fields");
 
-    serde_json::from_value(nodes.clone()).unwrap()
+    Ok(serde_json::from_value(nodes.clone())?)
 }
 
-#[derive(Deserialize, Debug)]
-pub struct wrapper {
-    fields: Vec<Item>,
-}
-
-pub fn fetch_project_items(token: &str, project_id: &str) -> wrapper {
+pub fn fetch_project_items(token: &str, project_id: &str) -> anyhow::Result<Vec<Item>> {
     let query = r#"
         query {
             node(id: "PROJECT_ID") {
                 ... on ProjectV2 {
-                    items(first: 20) {
+                    items(first: 100) {
                         nodes {
                             id
-                            fieldValues(first: 8) {
+                            fieldValues(first: 20) {
                                 nodes {
                                     ... on ProjectV2ItemFieldTextValue {
                                         text
@@ -264,15 +196,15 @@ pub fn fetch_project_items(token: &str, project_id: &str) -> wrapper {
                     }
                 }
             }
-        }"#.replace("PROJECT_ID", project_id);
+        }"#
+    .replace("PROJECT_ID", project_id);
 
-    let response = send_query_request(token, &query);
-    let response_json = response.json::<Value>().expect("Bad Json input");
-    let nodes = rip_data(&response_json, "items"); 
+    let response = send_query_request(token, &query)?;
 
-    println!("{:?}", nodes);
-    
-    serde_json::from_value(nodes.clone()).unwrap()
+    let response_json = response.json::<Value>()?;
+    let nodes = rip_data(&response_json, "items");
+
+    Ok(serde_json::from_value(nodes.clone())?)
 }
 
 pub fn rip_data<'a>(value: &'a Value, path: &'a str) -> &'a Value {
@@ -295,10 +227,74 @@ pub fn load_id() -> github_device_flow::Credential {
     )
     .expect("Failure loading credential");
 
-    fs::write(
+    let _ = fs::write(
         "./access_token",
         serde_json::to_string(&cred).expect("Failed to serialize"),
     );
 
     cred
+}
+
+pub fn update_item_field_(
+    token: &str,
+    project_id: &str,
+    item_id: &str,
+    field_id: &str,
+) -> Result<()> {
+    let client = reqwest::Client::new();
+
+mut headers = HeaderMap::new();
+    headers.insert(
+        AUTHORIZATION,
+        HeaderValue::from_str(&format!("Bearer {}", token))?,
+    );
+
+    let query = r#"mutation {
+        updateProjectV2ItemFieldValue(
+            input: {
+                projectId: ""
+                itemId: ""
+                fieldId: ""
+                value: {
+                    text: "Updated text"
+                }
+            }
+        ) {
+            projectV2Item {
+                id
+            }
+        }
+    }"#;
+
+    let query = query
+        .replace("\"", "\\\"")
+        .replace("PROJECT_ID", project_id)
+        .replace("ITEM_ID", item_id)
+        .replace("FIELD_ID", field_id);
+
+pub fn add_draft_issue(token: &str, project_id: &str, body: &str, title: &str) -> anyhow::Result<String> {
+    let query = r#"mutation {
+        addProjectV2DraftIssue(
+            input: {
+                projectId: "PROJECT_ID"
+                title: "TITLE"
+                body: "BODY"
+            }
+        ) {
+            projectItem {
+                id
+            }
+        }
+    }"#;
+
+    let query = query
+        .replace("PROJECT_ID", project_id)
+        .replace("TITLE", title)
+        .replace("BODY", body); 
+
+    let response = send_query_request(token, &query)?;
+
+    println!("{:?}", response.text());
+
+    Ok(String::new())
 }
