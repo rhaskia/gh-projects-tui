@@ -17,7 +17,7 @@ fn main() {
     let items = fetch_project_items(&cred.token, &ids[2].id).unwrap();
     println!("{:#?}", items);
 
-    let app = app::App::new(items, fields, projects);
+    let app = app::App::new(items, fields, project_ids);
 
 
     //add_draft_issue(&cred.token, &ids[0].id, "test body", "test title");

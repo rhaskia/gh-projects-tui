@@ -27,7 +27,6 @@ struct AccessTokenRequest {
     grant_type: String,
 }
 
-
 use serde_json::{from_value, json};
 
 pub fn send_query_request(token: &str, query: &str) -> anyhow::Result<Response> {
@@ -235,19 +234,8 @@ pub fn load_id() -> github_device_flow::Credential {
     cred
 }
 
-pub fn update_item_field_(
-    token: &str,
-    project_id: &str,
-    item_id: &str,
-    field_id: &str,
-) -> Result<()> {
+pub fn update_item_field(token: &str, project_id: &str, item_id: &str, field_id: &str,) {
     let client = reqwest::Client::new();
-
-mut headers = HeaderMap::new();
-    headers.insert(
-        AUTHORIZATION,
-        HeaderValue::from_str(&format!("Bearer {}", token))?,
-    );
 
     let query = r#"mutation {
         updateProjectV2ItemFieldValue(
@@ -271,6 +259,7 @@ mut headers = HeaderMap::new();
         .replace("PROJECT_ID", project_id)
         .replace("ITEM_ID", item_id)
         .replace("FIELD_ID", field_id);
+}
 
 pub fn add_draft_issue(token: &str, project_id: &str, body: &str, title: &str) -> anyhow::Result<String> {
     let query = r#"mutation {

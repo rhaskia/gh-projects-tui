@@ -20,6 +20,18 @@ use serde_json::Value;
 use std::cmp;
 use std::io::{stdout, Result};
 
+pub fn control_logic(mut app: App) -> Result<()> {
+    // Load user info and load it into the App
+    let app = load_user_info(app);
+
+    // Actual UI once loaded
+    draw(app)
+}
+
+pub fn load_user_info(mut app: App) -> App {
+    app
+}
+
 pub(crate) fn draw(mut app: App) -> Result<()> {
     stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
@@ -27,7 +39,7 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
     terminal.clear()?;
 
     //let rows = get_rows(&app.items, &app.()fields);
-    let n_widths = get_widths(&app.fields, &app.items);
+    let n_widths = get_widths(&app.fields.unwrap(), &app.items.unwrap());
     let headers = get_headers(&app, &n_widths);
     let mut offset = 0;
     let widths = constrained_widths(&n_widths);

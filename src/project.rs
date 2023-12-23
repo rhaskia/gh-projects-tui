@@ -62,7 +62,7 @@ enum Content {
 
 #[derive(Debug, Deserialize)]
 pub struct ProjectV2FieldCommon {
-    name: String,
+    pub name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -112,8 +112,8 @@ pub struct IterationConfig {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FieldOption {
-    id: String,
-    name: String,
+    pub id: String,
+    pub name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
