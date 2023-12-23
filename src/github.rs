@@ -234,17 +234,17 @@ pub fn load_id() -> github_device_flow::Credential {
     cred
 }
 
-pub fn update_item_field(token: &str, project_id: &str, item_id: &str, field_id: &str,) {
+pub fn update_item_field(token: &str, project_id: &str, item_id: &str, field_id: &str, new_text: &str) {
     let client = reqwest::Client::new();
 
     let query = r#"mutation {
         updateProjectV2ItemFieldValue(
             input: {
-                projectId: ""
-                itemId: ""
-                fieldId: ""
+                projectId: "PROJECT_ID"
+                itemId: "ITEM_ID"
+                fieldId: "FIELD_ID"
                 value: {
-                    text: "Updated text"
+                    text: "NEW_TEXT"
                 }
             }
         ) {
@@ -255,10 +255,10 @@ pub fn update_item_field(token: &str, project_id: &str, item_id: &str, field_id:
     }"#;
 
     let query = query
-        .replace("\"", "\\\"")
         .replace("PROJECT_ID", project_id)
         .replace("ITEM_ID", item_id)
-        .replace("FIELD_ID", field_id);
+        .replace("FIELD_ID", field_id)
+        .replace("NEW_TEXT", new_text);
 }
 
 pub fn add_draft_issue(token: &str, project_id: &str, body: &str, title: &str) -> anyhow::Result<String> {

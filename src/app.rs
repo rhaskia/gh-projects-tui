@@ -124,10 +124,12 @@ impl App {
 
         if let Some(info) = self.user_info {
             let field_value = info.items[self.item_state].field_values.nodes[self.field_state];
-        }
 
-        if let ProjectV2ItemFieldValue::ProjectV2ItemFieldTextValue { text, field } = field_value {
-            self.input.current_input = text;
+            if let ProjectV2ItemFieldValue::ProjectV2ItemFieldTextValue { text, field } =
+                field_value
+            {
+                self.input.current_input = text;
+            }
         }
 
         // let index_field = self.fields[self.field_state]..to_ascii_lowercase();
@@ -191,20 +193,24 @@ impl App {
     }
 
     pub fn set_field_at(&mut self, item: usize, field: usize, input: String) {
-        let index_field = self.fields[field].name.to_ascii_lowercase();
-        self.items[item]
-            .field_values
-            .insert(index_field, Value::String(input));
+        if let Some(app_info) = self.user_info {
+            let index_field = &app_info.fields[field].get_name().to_ascii_lowercase();
+            app_info.items[item]
+                .field_values
+                .insert(index_field, Value::String(input));
+        }
     }
 
     pub fn get_field_at(&self, item: usize, field: usize) -> &str {
-        let index_field = self.fields[field].title.to_ascii_lowercase();
-        self.items[item]
-            .field_values
-            .get(&*index_field)
-            .unwrap_or(&Value::Bool(false))
-            .as_str()
-            .unwrap_or("")
+        if let Some(app_info) = self.user_info {
+            let index_field = app_info.fields[field].get_name().to_ascii_lowercase();
+            app_info.items[item]
+                .field_values
+                .get(&*index_field)
+                .unwrap_or(&Value::Bool(false))
+                .as_str()
+                .unwrap_or("")
+        }
     }
 }
 
@@ -216,37 +222,39 @@ pub fn insert_mode_keys(key: KeyEvent, app: &mut App) {
         _ => {}
     }
 
-    if app.fields[app.field_state].options.is_some() {
-        match key.code {
-            KeyCode::Char('j') | KeyCode::Down => {
-                app.shift_option_down();
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                app.shift_option_up();
-            }
+    if let Some(app_info) = app.user_info {
+        if let Field::ProjectV2SingleSelectField(pssf) = app_info.fields[app.field_state] {
+            match key.code {
+                KeyCode::Char('j') | KeyCode::Down => {
+                    app.shift_option_down();
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    app.shift_option_up();
+                }
 
-            KeyCode::Enter => app.set_option(),
+                KeyCode::Enter => app.set_option(),
 
-            _ => {}
-        }
-    } else {
-        match key.code {
-            KeyCode::Char(a) => {
-                app.insert_char(a);
+                _ => {}
             }
-            KeyCode::Backspace => {
-                app.backspace();
-            }
+        } else {
+            match key.code {
+                KeyCode::Char(a) => {
+                    app.insert_char(a);
+                }
+                KeyCode::Backspace => {
+                    app.backspace();
+                }
 
-            KeyCode::Enter => app.set_string(),
+                KeyCode::Enter => app.set_string(),
 
-            KeyCode::Left => {
-                app.cursor_left();
+                KeyCode::Left => {
+                    app.cursor_left();
+                }
+                KeyCode::Right => {
+                    app.cursor_right();
+                }
+                _ => {}
             }
-            KeyCode::Right => {
-                app.cursor_right();
-            }
-            _ => {}
         }
     }
 }

@@ -7,9 +7,10 @@
 #![allow(unused_mut)]
 #![allow(unused_variables)]
 
-use crate::app::{App, InputMode, normal_mode_keys, insert_mode_keys};
+use crate::app::{insert_mode_keys, normal_mode_keys, App, InputMode};
 use crate::project::{Field, Item};
 
+use anyhow::anyhow;
 use crossterm::{
     event::{self, KeyEventKind},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -20,7 +21,7 @@ use serde_json::Value;
 use std::cmp;
 use std::io::{stdout, Result};
 
-pub fn control_logic(mut app: App) -> Result<()> {
+pub fn control_logic(mut app: App) -> anyhow::Result<()> {
     // Load user info and load it into the App
     let app = load_user_info(app);
 
@@ -32,15 +33,19 @@ pub fn load_user_info(mut app: App) -> App {
     app
 }
 
-pub(crate) fn draw(mut app: App) -> Result<()> {
+pub(crate) fn draw(mut app: App) -> anyhow::Result<()> {
     stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     terminal.clear()?;
 
+    let app_info = &app
+        .user_info
+        .ok_or_else(|| anyhow!("No user error loaded"))?;
+
     //let rows = get_rows(&app.items, &app.()fields);
-    let n_widths = get_widths(&app.fields.unwrap(), &app.items.unwrap());
-    let headers = get_headers(&app, &n_widths);
+    let n_widths = get_widths(&app_info.fields, &app_info.items);
+    let headers = get_headers(&app_info.fields, &n_widths);
     let mut offset = 0;
     let widths = constrained_widths(&n_widths);
 
@@ -60,7 +65,7 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
                 .style(Style::default());
 
             let title = Paragraph::new(Text::styled(
-                app.projects[1].title.clone(),
+                app_info.projects[1].title.clone(),
                 Style::default().fg(Color::Green),
             ))
             .block(title_block);
@@ -102,12 +107,15 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
             // TODO: custom index list
             let list_state = ListState::default().with_selected(Some(app.item_state.clone()));
 
-            for i in offset..app.fields.len() {
+            for i in offset..app_info.fields.len() {
                 frame.render_stateful_widget(
-                    draw_list(&app.items, &app.fields, i)
-                        .highlight_style(
-                            if i == app.field_state { Style::reversed(Default::default()) }
-                            else { Style::not_reversed(Default::default()) }),
+                    draw_list(&app_info.items, &app_info.fields, i).highlight_style(
+                        if i == app.field_state {
+                            Style::reversed(Default::default())
+                        } else {
+                            Style::not_reversed(Default::default())
+                        },
+                    ),
                     lists_layout[i - offset],
                     &mut list_state.clone(),
                 );
@@ -130,7 +138,6 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
                 let mut position = lists_layout[app.field_state - offset].clone();
 
                 if let Some(ref options) = app.input.current_options {
-
                     //if app.item_state
 
                     position.y = position.y + (app.item_state as u16); //- (app.input.current_option as u16);
@@ -141,30 +148,40 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
 
                     let block = Block::new().borders(Borders::LEFT | Borders::RIGHT);
 
-                    let option_names: Vec<ListItem> = options.iter().map(|n| ListItem::new(n.name.clone())).collect();
+                    let option_names: Vec<ListItem> = options
+                        .iter()
+                        .map(|n| ListItem::new(n.name.clone()))
+                        .collect();
 
                     frame.render_widget(Clear, position);
 
-                    frame.render_stateful_widget(List::new(option_names).block(block)
-                                                     .highlight_style(Style::new().reversed()),
-                                                 position, &mut state_wrapper(app.input.current_option));
-                }
-                else {
+                    frame.render_stateful_widget(
+                        List::new(option_names)
+                            .block(block)
+                            .highlight_style(Style::new().reversed()),
+                        position,
+                        &mut state_wrapper(app.input.current_option),
+                    );
+                } else {
                     position.y = position.y + (app.item_state as u16);
                     position.height = 1;
 
                     frame.render_widget(Clear, position);
 
-
-                    frame.render_widget(Paragraph::new(app.input.current_input.clone())
-                                            .style(Style::red(Default::default())),
-                                        position);
+                    frame.render_widget(
+                        Paragraph::new(app.input.current_input.clone())
+                            .style(Style::red(Default::default())),
+                        position,
+                    );
 
                     frame.set_cursor(position.x + app.input.cursor_pos, position.y);
                 }
             }
 
-            frame.render_widget(Paragraph::new(get_info_text(&app)), layout[2]);
+            frame.render_widget(
+                Paragraph::new(get_info_text(&app, &app_info.items, &app_info.fields)),
+                layout[2],
+            );
         })?;
 
         if event::poll(std::time::Duration::from_millis(16))? {
@@ -194,12 +211,13 @@ fn state_wrapper(i: usize) -> ListState {
 
 fn find_minimum_offset(widths: &Vec<u16>, state: usize, max_width: u16) -> usize {
     for i in 0..widths.len() {
-        if widths[i..state+1].iter().sum::<u16>() < max_width { return i; }
+        if widths[i..state + 1].iter().sum::<u16>() < max_width {
+            return i;
+        }
     }
 
     0
 }
-
 
 fn split_shift(v: &Vec<Constraint>, index: usize) -> Vec<Constraint> {
     let (before, after) = v.split_at(index);
@@ -211,12 +229,12 @@ fn split_shift(v: &Vec<Constraint>, index: usize) -> Vec<Constraint> {
     new_vec
 }
 
-fn get_headers(app: &App, widths: &Vec<u16>) -> Vec<String> {
-    (0..app.fields.len())
+fn get_headers(fields: &Vec<Field>, widths: &Vec<u16>) -> Vec<String> {
+    (0..fields.len())
         .map(|i| {
             format!(
                 "{:─<w$}",
-                app.fields[i].name.clone(),
+                fields[i].get_name().clone(),
                 w = (widths[i] as usize - 1)
             )
         })
@@ -229,18 +247,26 @@ fn draw_list<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> 
         .highlight_style(Style::new().reversed())
 }
 
-fn get_info_text(app: &App) -> String {
-    format!("{}/{:?}: {:?}", app.field_state, app.item_state, app.items[app.item_state].fields.get(&app.fields[app.field_state].name))
+fn get_info_text(app: &App, items: &Vec<Item>, fields: &Vec<Field>) -> String {
+    format!(
+        "{}/{:?}: {:?}",
+        app.field_state,
+        app.item_state,
+        items[app.item_state]
+            .field_values
+            .nodes
+            .get(fields[app.field_state].get_name())
+    )
 }
 
 fn get_column<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> Vec<ListItem<'a>> {
-    let index_field = fields[index].name.to_ascii_lowercase();
+    let index_field = fields[index].get_name().to_ascii_lowercase();
 
     items
         .iter()
         .map(|item| {
             ListItem::new(
-                item.fields
+                item.field_values
                     .get(&*index_field)
                     .unwrap_or(&Value::Bool(false))
                     .as_str()
@@ -257,8 +283,8 @@ fn get_rows<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>) -> Vec<Row<'a>> {
             let cells = fields
                 .iter()
                 .map(move |f| {
-                    item.fields
-                        .get(&*f.name.to_ascii_lowercase())
+                    item.field_values
+                        .get(&*f.get_name().to_ascii_lowercase())
                         .unwrap_or(&Value::Bool(false))
                         .as_str()
                         .unwrap_or("")
@@ -279,10 +305,9 @@ fn get_widths(fields: &Vec<Field>, items: &Vec<Item>) -> Vec<u16> {
         .iter()
         .map(|field| {
             cmp::max(
-                field.name.len(),
-                match &field.options {
-                    // has options
-                    Some(o) => o.iter().fold(0, |max, s| {
+                field.get_name().len(),
+                match &field {
+                    Field::ProjectV2SingleSelectField(pf) => pf.options.iter().fold(0, |max, s| {
                         if s.name.len() > max {
                             s.name.len()
                         } else {
@@ -290,11 +315,13 @@ fn get_widths(fields: &Vec<Field>, items: &Vec<Item>) -> Vec<u16> {
                         }
                     }),
 
+                    // has options
+
                     // pure string
-                    None => items.iter().fold(0, |max, i| {
+                    _ => items.iter().fold(0, |max, i| {
                         let l = i
-                            .fields
-                            .get(&*field.name.to_ascii_lowercase())
+                            .field_values
+                            .get(&*field.get_name().to_ascii_lowercase())
                             .unwrap_or(&Value::Bool(false))
                             .as_str()
                             .unwrap_or("")

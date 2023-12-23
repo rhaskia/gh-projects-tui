@@ -85,6 +85,17 @@ pub enum Field {
     Empty,
 }
 
+impl Field {
+    pub fn get_name(&self) -> &str {
+        match self {
+            Field::ProjectV2Field(pf) => &pf.name,
+            Field::ProjectV2IterationField(pif) => &pif.name,
+            Field::ProjectV2SingleSelectField(pssf) => &pssf.name,
+            Empty => "",
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProjectV2Field {
     pub id: String,
