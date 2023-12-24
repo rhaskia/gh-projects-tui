@@ -8,6 +8,7 @@
 #![allow(unused_variables)]
 
 use crate::app::{insert_mode_keys, normal_mode_keys, App, InputMode};
+use crate::github::load_id;
 use crate::project::{Field, Item};
 
 use anyhow::anyhow;
@@ -21,16 +22,21 @@ use serde_json::Value;
 use std::cmp;
 use std::io::{stdout, Result};
 
-pub fn control_logic(mut app: App) -> anyhow::Result<()> {
+pub fn start_app(mut app: App) -> anyhow::Result<()> {
+    // get id
+    app.id = Some(load_id());
+
     // Load user info and load it into the App
-    let app = load_user_info(app);
+    let err = app.reload_info();
+
+    println!("{:?}", err);
 
     // Actual UI once loaded
-    draw(app)
-}
+    draw(app)?;
 
-pub fn load_user_info(mut app: App) -> App {
-    app
+    println!("something went wrong ):");
+
+    Ok(())
 }
 
 pub(crate) fn draw(mut app: App) -> anyhow::Result<()> {
@@ -39,18 +45,16 @@ pub(crate) fn draw(mut app: App) -> anyhow::Result<()> {
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     terminal.clear()?;
 
-    let app_info = &app
-        .user_info
-        .ok_or_else(|| anyhow!("No user error loaded"))?;
-
     //let rows = get_rows(&app.items, &app.()fields);
-    let n_widths = get_widths(&app_info.fields, &app_info.items);
-    let headers = get_headers(&app_info.fields, &n_widths);
+    let n_widths = get_widths(&app.info()?.fields, &app.info()?.items);
+    let headers = get_headers(&app.info()?.fields, &n_widths);
     let mut offset = 0;
     let widths = constrained_widths(&n_widths);
 
     loop {
         terminal.draw(|frame| {
+            // TODO cut this ugly closure up
+
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints(vec![
@@ -65,7 +69,7 @@ pub(crate) fn draw(mut app: App) -> anyhow::Result<()> {
                 .style(Style::default());
 
             let title = Paragraph::new(Text::styled(
-                app_info.projects[1].title.clone(),
+                app.info().unwrap().projects[1].title.clone(),
                 Style::default().fg(Color::Green),
             ))
             .block(title_block);
@@ -107,9 +111,9 @@ pub(crate) fn draw(mut app: App) -> anyhow::Result<()> {
             // TODO: custom index list
             let list_state = ListState::default().with_selected(Some(app.item_state.clone()));
 
-            for i in offset..app_info.fields.len() {
+            for i in offset..app.info().unwrap().fields.len() {
                 frame.render_stateful_widget(
-                    draw_list(&app_info.items, &app_info.fields, i).highlight_style(
+                    draw_list(&app.info().unwrap().items, &app.info().unwrap().fields, i).highlight_style(
                         if i == app.field_state {
                             Style::reversed(Default::default())
                         } else {
@@ -179,7 +183,11 @@ pub(crate) fn draw(mut app: App) -> anyhow::Result<()> {
             }
 
             frame.render_widget(
-                Paragraph::new(get_info_text(&app, &app_info.items, &app_info.fields)),
+                Paragraph::new(get_info_text(
+                    &app,
+                    &app.info().unwrap().items,
+                    &app.info().unwrap().fields,
+                )),
                 layout[2],
             );
         })?;
@@ -219,6 +227,8 @@ fn find_minimum_offset(widths: &Vec<u16>, state: usize, max_width: u16) -> usize
     0
 }
 
+// [1, 2, 3, 4], split at 2 => [3, 4, 1, 2]
+// for wrapping fields around, no longer in use due to being tacky
 fn split_shift(v: &Vec<Constraint>, index: usize) -> Vec<Constraint> {
     let (before, after) = v.split_at(index);
 
@@ -254,8 +264,7 @@ fn get_info_text(app: &App, items: &Vec<Item>, fields: &Vec<Field>) -> String {
         app.item_state,
         items[app.item_state]
             .field_values
-            .nodes
-            .get(fields[app.field_state].get_name())
+            .get_from_field(fields[app.field_state].get_name())
     )
 }
 
@@ -264,15 +273,7 @@ fn get_column<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) ->
 
     items
         .iter()
-        .map(|item| {
-            ListItem::new(
-                item.field_values
-                    .get(&*index_field)
-                    .unwrap_or(&Value::Bool(false))
-                    .as_str()
-                    .unwrap_or(""),
-            )
-        })
+        .map(|item| ListItem::new(item.field_values.get_from_field(&*index_field)))
         .collect()
 }
 
@@ -284,10 +285,7 @@ fn get_rows<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>) -> Vec<Row<'a>> {
                 .iter()
                 .map(move |f| {
                     item.field_values
-                        .get(&*f.get_name().to_ascii_lowercase())
-                        .unwrap_or(&Value::Bool(false))
-                        .as_str()
-                        .unwrap_or("")
+                        .get_from_field(&*f.get_name().to_ascii_lowercase())
                 })
                 .collect::<Vec<&str>>();
 
@@ -321,10 +319,7 @@ fn get_widths(fields: &Vec<Field>, items: &Vec<Item>) -> Vec<u16> {
                     _ => items.iter().fold(0, |max, i| {
                         let l = i
                             .field_values
-                            .get(&*field.get_name().to_ascii_lowercase())
-                            .unwrap_or(&Value::Bool(false))
-                            .as_str()
-                            .unwrap_or("")
+                            .get_from_field(&*field.get_name().to_ascii_lowercase())
                             .len();
                         if l > max {
                             l

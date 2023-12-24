@@ -10,7 +10,7 @@
 const CLIENT_ID: &str = include_str!("client_id");
 const CLIENT_SECRET: &str = include_str!("client_secret");
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use github_device_flow::authorize;
 use reqwest::blocking::Response;
 use serde::{Deserialize, Serialize};
@@ -50,9 +50,9 @@ pub fn get_user(token: &str) -> anyhow::Result<User> {
         .header("Authorization", format!("Bearer {}", token))
         .header("X-GitHub-Api-Version", "2022-11-28")
         .header("User-Agent", "Projects-TUI")
-        .send();
+        .send()?;
 
-    Ok(response?.json::<User>()?)
+    Ok(response.json::<User>()?)
 }
 
 pub fn get_project_ids(token: &str, login: &str) -> Result<Vec<Project>, anyhow::Error> {
@@ -234,7 +234,13 @@ pub fn load_id() -> github_device_flow::Credential {
     cred
 }
 
-pub fn update_item_field(token: &str, project_id: &str, item_id: &str, field_id: &str, new_text: &str) {
+pub fn update_item_field(
+    token: &str,
+    project_id: &str,
+    item_id: &str,
+    field_id: &str,
+    new_text: &str,
+) {
     let client = reqwest::Client::new();
 
     let query = r#"mutation {
@@ -261,7 +267,12 @@ pub fn update_item_field(token: &str, project_id: &str, item_id: &str, field_id:
         .replace("NEW_TEXT", new_text);
 }
 
-pub fn add_draft_issue(token: &str, project_id: &str, body: &str, title: &str) -> anyhow::Result<String> {
+pub fn add_draft_issue(
+    token: &str,
+    project_id: &str,
+    body: &str,
+    title: &str,
+) -> anyhow::Result<String> {
     let query = r#"mutation {
         addProjectV2DraftIssue(
             input: {
@@ -279,7 +290,7 @@ pub fn add_draft_issue(token: &str, project_id: &str, body: &str, title: &str) -
     let query = query
         .replace("PROJECT_ID", project_id)
         .replace("TITLE", title)
-        .replace("BODY", body); 
+        .replace("BODY", body);
 
     let response = send_query_request(token, &query)?;
 

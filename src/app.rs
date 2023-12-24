@@ -9,17 +9,19 @@
 
 use crate::github;
 use crate::project::*;
+use anyhow::anyhow;
 use crossterm::event::{KeyCode, KeyEvent};
 use github_device_flow::Credential;
 use serde_json::value::Value;
 use std::string::String;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum InputMode {
     Normal,
     Input,
 }
 
+#[derive(Debug)]
 pub(crate) struct App {
     pub project_state: usize,
     pub item_state: usize,
@@ -33,6 +35,7 @@ pub(crate) struct App {
     pub input: InputApp,
 }
 
+#[derive(Debug)]
 pub struct InputApp {
     pub current_input: String,
     pub cursor_pos: u16,
@@ -40,6 +43,7 @@ pub struct InputApp {
     pub current_option: usize,
 }
 
+#[derive(Debug)]
 pub struct UserInfo {
     pub user: User,
     pub items: Vec<Item>,
@@ -69,8 +73,29 @@ impl App {
         }
     }
 
+    pub fn reload_info(&mut self) -> anyhow::Result<()> {
+        if let Some(cred) = &self.id {
+            let user = github::get_user(&cred.token)?;
+            let projects = github::get_project_ids(&cred.token, &user.login)?;
+            let items = github::fetch_project_items(&cred.token, &projects[self.project_state].id)?;
+            let fields = github::fetch_project_fields(&cred.token, &projects[self.project_state].id)?;
+
+            self.user_info = Some(UserInfo { user, projects, items, fields })
+        }
+
+        Ok(()) 
+    }
+
+    pub fn info(&self) -> anyhow::Result<&UserInfo> {
+        self.user_info.as_ref().ok_or_else(|| anyhow!("No user info loaded"))
+    }
+
+    pub fn mut_info(&mut self) -> anyhow::Result<&mut UserInfo> {
+        self.user_info.as_mut().ok_or_else(|| anyhow!("No user info loaded"))
+    }
+
     pub fn right(&mut self) {
-        if let Some(info) = self.user_info {
+        if let Some(info) = &self.user_info {
             self.field_state += 1;
             if self.field_state >= info.fields.len() {
                 self.field_state = 0;
@@ -79,7 +104,7 @@ impl App {
     }
 
     pub fn left(&mut self) {
-        if let Some(info) = self.user_info {
+        if let Some(info) = &self.user_info {
             self.field_state = match self.field_state {
                 0 => info.fields.len() - 1,
                 _ => self.field_state - 1,
@@ -88,7 +113,7 @@ impl App {
     }
 
     pub fn next(&mut self) {
-        if let Some(info) = self.user_info {
+        if let Some(info) = &self.user_info {
             self.item_state += 1;
             if self.item_state >= info.items.len() {
                 self.item_state = 0;
@@ -97,7 +122,7 @@ impl App {
     }
 
     pub fn previous(&mut self) {
-        if let Some(info) = self.user_info {
+        if let Some(info) = &self.user_info {
             self.item_state = match self.item_state {
                 0 => info.items.len() - 1,
                 _ => self.item_state - 1,
@@ -122,13 +147,13 @@ impl App {
     pub fn begin_editing(&mut self) {
         self.menu_state = InputMode::Input;
 
-        if let Some(info) = self.user_info {
-            let field_value = info.items[self.item_state].field_values.nodes[self.field_state];
+        if let Some(info) = &self.user_info {
+            let field_value = &info.items[self.item_state].field_values.nodes[self.field_state];
 
             if let ProjectV2ItemFieldValue::ProjectV2ItemFieldTextValue { text, field } =
                 field_value
             {
-                self.input.current_input = text;
+                self.input.current_input = text.clone();
             }
         }
 
@@ -193,24 +218,19 @@ impl App {
     }
 
     pub fn set_field_at(&mut self, item: usize, field: usize, input: String) {
-        if let Some(app_info) = self.user_info {
-            let index_field = &app_info.fields[field].get_name().to_ascii_lowercase();
-            app_info.items[item]
-                .field_values
-                .insert(index_field, Value::String(input));
+        if let Some(app_info) = &self.user_info {
+            self.reload_info();
         }
     }
 
     pub fn get_field_at(&self, item: usize, field: usize) -> &str {
-        if let Some(app_info) = self.user_info {
+        if let Some(app_info) = &self.user_info {
             let index_field = app_info.fields[field].get_name().to_ascii_lowercase();
             app_info.items[item]
                 .field_values
-                .get(&*index_field)
-                .unwrap_or(&Value::Bool(false))
-                .as_str()
-                .unwrap_or("")
+                .get_from_field(&index_field)
         }
+        else { "" }
     }
 }
 
@@ -222,8 +242,8 @@ pub fn insert_mode_keys(key: KeyEvent, app: &mut App) {
         _ => {}
     }
 
-    if let Some(app_info) = app.user_info {
-        if let Field::ProjectV2SingleSelectField(pssf) = app_info.fields[app.field_state] {
+    if let Some(app_info) = &app.user_info {
+        if let Field::ProjectV2SingleSelectField(pssf) = &app_info.fields[app.field_state] {
             match key.code {
                 KeyCode::Char('j') | KeyCode::Down => {
                     app.shift_option_down();

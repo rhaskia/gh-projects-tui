@@ -42,6 +42,27 @@ pub enum ProjectV2ItemFieldValue {
     Empty(Value), // Represents the empty field
 }
 
+impl Nodes<ProjectV2ItemFieldValue> {
+    pub fn get_from_field(&self, s: &str) -> &str {
+        use ProjectV2ItemFieldValue::*;
+
+        let field = self.nodes.iter().find(|v| 
+        match v {
+            Empty(v) => "",
+            ProjectV2ItemFieldTextValue { text, field } => &field.name, 
+            ProjectV2ItemFieldDateValue { date, field } => &field.name,
+            ProjectV2ItemFieldSingleSelectValue { name, field } => &field.name,
+        } == s).unwrap_or(&Empty(Value::Null));
+
+        match field {
+            Empty(v) => "",
+            ProjectV2ItemFieldTextValue { text, field } => &field.name, 
+            ProjectV2ItemFieldDateValue { date, field } => &field.name,
+            ProjectV2ItemFieldSingleSelectValue { name, field } => &field.name,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum Content {
@@ -91,7 +112,7 @@ impl Field {
             Field::ProjectV2Field(pf) => &pf.name,
             Field::ProjectV2IterationField(pif) => &pif.name,
             Field::ProjectV2SingleSelectField(pssf) => &pssf.name,
-            Empty => "",
+            Field::Empty => "",
         }
     }
 }
