@@ -6,21 +6,13 @@ mod ui;
 mod github;
 
 fn main() {
-    let cred = load_id();
+    let app = app::App::setup();
 
-    println!("{:?}", cred);
-    let user = get_user(&cred.token).unwrap();
-    let ids = get_project_ids(&cred.token, &user.login).unwrap();
-    println!("{:?}, {:?}", ids, user);
-    let fields = fetch_project_fields(&cred.token, &ids[2].id).unwrap(); 
-    println!("fields {:?}\n", fields);
-    let items = fetch_project_items(&cred.token, &ids[2].id).unwrap();
-    println!("{:#?}", items);
+    let err: Result<app::App, anyhow::Error> = ui::start_app(app);
 
-    let app = app::App::new(items, fields, projects);
+    //println!("App failed at {:?}", err);
+    println!("{:?}", err.unwrap().info().unwrap().items);
 
-
-    //add_draft_issue(&cred.token, &ids[0].id, "test body", "test title");
-    //
-    update_item_field(&cred.token, "PVTI_lAHOBaITmc4AZx2dzgLghMs");
+    // add_draft_issue(&cred.token, &ids[0].id, st body", "test title");
+    // //
 }

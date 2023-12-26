@@ -7,9 +7,12 @@
 #![allow(unused_mut)]
 #![allow(unused_variables)]
 
-use crate::app::{App, InputMode, normal_mode_keys, insert_mode_keys};
-use crate::project::{Field, Item};
+use crate::app::{insert_mode_keys, normal_mode_keys, App, InputMode};
+use crate::github::load_id;
+use crate::project::{Field, Item, ProjectV2ItemField};
+use std::rc::Rc;
 
+use anyhow::anyhow;
 use crossterm::{
     event::{self, KeyEventKind},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -20,20 +23,39 @@ use serde_json::Value;
 use std::cmp;
 use std::io::{stdout, Result};
 
-pub(crate) fn draw(mut app: App) -> Result<()> {
+pub fn start_app(mut app: App) -> anyhow::Result<App> {
+    // get id
+    app.id = Some(load_id());
+
+    // Load user info and load it into the App
+    let err = app.reload_info();
+
+    println!("{:?}, \n{:?}", err, app.user_info);
+
+    // Actual UI once loaded
+    let app = draw(app)?;
+
+    println!("something went wrong ):");
+
+    Ok(app)
+}
+
+pub(crate) fn draw(mut app: App) -> anyhow::Result<App> {
     stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     terminal.clear()?;
 
     //let rows = get_rows(&app.items, &app.()fields);
-    let n_widths = get_widths(&app.fields, &app.items);
-    let headers = get_headers(&app, &n_widths);
+    let n_widths = get_widths(&app.info()?.fields, &app.info()?.items);
+    let headers = get_headers(&app.info()?.fields, &n_widths);
     let mut offset = 0;
     let widths = constrained_widths(&n_widths);
 
     loop {
         terminal.draw(|frame| {
+            // TODO cut this ugly closure up
+
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints(vec![
@@ -48,7 +70,7 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
                 .style(Style::default());
 
             let title = Paragraph::new(Text::styled(
-                app.projects[1].title.clone(),
+                app.info().unwrap().projects[1].title.clone(),
                 Style::default().fg(Color::Green),
             ))
             .block(title_block);
@@ -90,12 +112,14 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
             // TODO: custom index list
             let list_state = ListState::default().with_selected(Some(app.item_state.clone()));
 
-            for i in offset..app.fields.len() {
+            for i in offset..app.info().unwrap().fields.len() {
                 frame.render_stateful_widget(
-                    draw_list(&app.items, &app.fields, i)
-                        .highlight_style(
-                            if i == app.field_state { Style::reversed(Default::default()) }
-                            else { Style::not_reversed(Default::default()) }),
+                    draw_list(&app.info().unwrap().items, &app.info().unwrap().fields, i)
+                        .highlight_style(if i == app.field_state {
+                            Style::reversed(Default::default())
+                        } else {
+                            Style::not_reversed(Default::default())
+                        }),
                     lists_layout[i - offset],
                     &mut list_state.clone(),
                 );
@@ -115,44 +139,17 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
             frame.render_widget(Paragraph::new(">"), Rect::new(0, cursor_pos, 1, 1));
 
             if app.menu_state == InputMode::Input {
-                let mut position = lists_layout[app.field_state - offset].clone();
-
-                if let Some(ref options) = app.input.current_options {
-
-                    //if app.item_state
-
-                    position.y = position.y + (app.item_state as u16); //- (app.input.current_option as u16);
-
-                    position.x -= 1;
-                    position.width += 1;
-                    position.height = options.len() as u16;
-
-                    let block = Block::new().borders(Borders::LEFT | Borders::RIGHT);
-
-                    let option_names: Vec<ListItem> = options.iter().map(|n| ListItem::new(n.name.clone())).collect();
-
-                    frame.render_widget(Clear, position);
-
-                    frame.render_stateful_widget(List::new(option_names).block(block)
-                                                     .highlight_style(Style::new().reversed()),
-                                                 position, &mut state_wrapper(app.input.current_option));
-                }
-                else {
-                    position.y = position.y + (app.item_state as u16);
-                    position.height = 1;
-
-                    frame.render_widget(Clear, position);
-
-
-                    frame.render_widget(Paragraph::new(app.input.current_input.clone())
-                                            .style(Style::red(Default::default())),
-                                        position);
-
-                    frame.set_cursor(position.x + app.input.cursor_pos, position.y);
-                }
+                draw_editor(frame, &app, &lists_layout, offset);
             }
 
-            frame.render_widget(Paragraph::new(get_info_text(&app)), layout[2]);
+            frame.render_widget(
+                Paragraph::new(get_info_text(
+                    &app,
+                    &app.info().unwrap().items,
+                    &app.info().unwrap().fields,
+                )),
+                layout[2],
+            );
         })?;
 
         if event::poll(std::time::Duration::from_millis(16))? {
@@ -173,6 +170,66 @@ pub(crate) fn draw(mut app: App) -> Result<()> {
 
     stdout().execute(LeaveAlternateScreen)?;
     disable_raw_mode()?;
+    Ok(app)
+}
+
+fn draw_editor(frame: &mut Frame, app: &App, lists_layout: &Rc<[Rect]>, offset: usize) -> anyhow::Result<()> {
+    let mut position = lists_layout[app.field_state - offset].clone();
+
+    use ProjectV2ItemField::*;
+    match app.get_field_at(app.item_state, app.field_state)? {
+        // Pure Text
+        ProjectV2ItemField::TextValue { text, field } => {
+            position.y = position.y + (app.item_state as u16);
+            position.height = 1;
+
+            frame.render_widget(Clear, position);
+
+            frame.render_widget(
+                Paragraph::new(app.input.current_input.clone()).style(Style::red(Default::default())),
+                position,
+            );
+
+            frame.set_cursor(position.x + app.input.cursor_pos, position.y);
+        }
+
+        // With options
+        SingleSelectValue { name, field } => {
+            if let Field::ProjectV2SingleSelectField(full_field) = &app.info()?.fields[app.field_state] {
+                position.y = position.y + (app.item_state as u16); //- (app.input.current_option as u16);
+
+                position.x -= 1;
+                position.width += 1;
+                position.height = full_field.options.len() as u16;
+
+                let block = Block::new().borders(Borders::LEFT | Borders::RIGHT);
+
+                let option_names: Vec<ListItem> = full_field.options 
+                    .iter()
+                    .map(|n| ListItem::new(n.name.clone()))
+                    .collect();
+
+                frame.render_widget(Clear, position);
+
+                frame.render_stateful_widget(
+                    List::new(option_names)
+                        .block(block)
+                        .highlight_style(Style::new().reversed()),
+                    position,
+                    &mut state_wrapper(app.input.current_option),
+                );
+            }
+        }
+
+        // Date, calendar widget?
+        DateValue { date, field } => {
+
+        }
+
+        // Ignore
+        Empty(v) => {}
+    }
+
     Ok(())
 }
 
@@ -182,13 +239,16 @@ fn state_wrapper(i: usize) -> ListState {
 
 fn find_minimum_offset(widths: &Vec<u16>, state: usize, max_width: u16) -> usize {
     for i in 0..widths.len() {
-        if widths[i..state+1].iter().sum::<u16>() < max_width { return i; }
+        if widths[i..state + 1].iter().sum::<u16>() < max_width {
+            return i;
+        }
     }
 
     0
 }
 
-
+// [1, 2, 3, 4], split at 2 => [3, 4, 1, 2]
+// for wrapping fields around, no longer in use due to being tacky
 fn split_shift(v: &Vec<Constraint>, index: usize) -> Vec<Constraint> {
     let (before, after) = v.split_at(index);
 
@@ -199,12 +259,12 @@ fn split_shift(v: &Vec<Constraint>, index: usize) -> Vec<Constraint> {
     new_vec
 }
 
-fn get_headers(app: &App, widths: &Vec<u16>) -> Vec<String> {
-    (0..app.fields.len())
+fn get_headers(fields: &Vec<Field>, widths: &Vec<u16>) -> Vec<String> {
+    (0..fields.len())
         .map(|i| {
             format!(
                 "{:─<w$}",
-                app.fields[i].name.clone(),
+                fields[i].get_name(),
                 w = (widths[i] as usize - 1)
             )
         })
@@ -217,24 +277,21 @@ fn draw_list<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> 
         .highlight_style(Style::new().reversed())
 }
 
-fn get_info_text(app: &App) -> String {
-    format!("{}/{:?}: {:?}", app.field_state, app.item_state, app.items[app.item_state].fields.get(&app.fields[app.field_state].name))
+fn get_info_text(app: &App, items: &Vec<Item>, fields: &Vec<Field>) -> String {
+    format!(
+        "{}/{:?}: {:?}",
+        app.field_state,
+        app.item_state,
+        items[app.item_state]
+            .field_values
+            .get_from_field(fields[app.field_state].get_name())
+    )
 }
 
 fn get_column<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> Vec<ListItem<'a>> {
-    let index_field = fields[index].name.to_ascii_lowercase();
-
     items
         .iter()
-        .map(|item| {
-            ListItem::new(
-                item.fields
-                    .get(&*index_field)
-                    .unwrap_or(&Value::Bool(false))
-                    .as_str()
-                    .unwrap_or(""),
-            )
-        })
+        .map(|item| ListItem::new(item.field_values.name_from_field(fields[index].get_name())))
         .collect()
 }
 
@@ -245,11 +302,8 @@ fn get_rows<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>) -> Vec<Row<'a>> {
             let cells = fields
                 .iter()
                 .map(move |f| {
-                    item.fields
-                        .get(&*f.name.to_ascii_lowercase())
-                        .unwrap_or(&Value::Bool(false))
-                        .as_str()
-                        .unwrap_or("")
+                    item.field_values
+                        .name_from_field(&*f.get_name().to_ascii_lowercase())
                 })
                 .collect::<Vec<&str>>();
 
@@ -267,10 +321,9 @@ fn get_widths(fields: &Vec<Field>, items: &Vec<Item>) -> Vec<u16> {
         .iter()
         .map(|field| {
             cmp::max(
-                field.name.len(),
-                match &field.options {
-                    // has options
-                    Some(o) => o.iter().fold(0, |max, s| {
+                field.get_name().len(),
+                match &field {
+                    Field::ProjectV2SingleSelectField(pf) => pf.options.iter().fold(0, |max, s| {
                         if s.name.len() > max {
                             s.name.len()
                         } else {
@@ -278,15 +331,11 @@ fn get_widths(fields: &Vec<Field>, items: &Vec<Item>) -> Vec<u16> {
                         }
                     }),
 
+                    // has options
+
                     // pure string
-                    None => items.iter().fold(0, |max, i| {
-                        let l = i
-                            .fields
-                            .get(&*field.name.to_ascii_lowercase())
-                            .unwrap_or(&Value::Bool(false))
-                            .as_str()
-                            .unwrap_or("")
-                            .len();
+                    _ => items.iter().fold(0, |max, i| {
+                        let l = i.field_values.name_from_field(&*field.get_name()).len();
                         if l > max {
                             l
                         } else {

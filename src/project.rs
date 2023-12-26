@@ -20,31 +20,62 @@ pub struct User {
 #[serde(rename_all = "camelCase")]
 pub struct Item {
     pub id: String,
-    pub field_values: Nodes<ProjectV2ItemFieldValue>,
+    pub field_values: Nodes<ProjectV2ItemField>,
     pub content: Option<Content>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
-pub enum ProjectV2ItemFieldValue {
-    ProjectV2ItemFieldTextValue {
+pub enum ProjectV2ItemField {
+    TextValue {
         text: String,
         field: ProjectV2FieldCommon,
     },
-    ProjectV2ItemFieldDateValue {
+    DateValue {
         date: String, // Assuming date is a string
         field: ProjectV2FieldCommon,
     },
-    ProjectV2ItemFieldSingleSelectValue {
+    SingleSelectValue {
         name: String,
         field: ProjectV2FieldCommon,
     },
     Empty(Value), // Represents the empty field
 }
 
+impl ProjectV2ItemField {
+    pub fn value(&self) -> &str {
+        use ProjectV2ItemField::*;
+
+        match self {
+            Empty(v) => "",
+            TextValue { text, field } => &text, 
+            DateValue { date, field } => &date,
+            SingleSelectValue { name, field } => &name,
+        }
+    }
+}
+
+impl Nodes<ProjectV2ItemField> {
+    pub fn get_from_field(&self, s: &str) -> &ProjectV2ItemField {
+        use ProjectV2ItemField::*;
+
+        self.nodes.iter().find(|v| 
+        match v {
+            Empty(v) => "",
+            TextValue { text, field } => &field.name, 
+            DateValue { date, field } => &field.name,
+            SingleSelectValue { name, field } => &field.name,
+        } == s).unwrap_or(&Empty(Value::Null))
+    }
+
+    pub fn name_from_field(&self, s: &str) -> &str {
+        self.get_from_field(s).value()
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
-enum Content {
+pub enum Content {
     DraftIssue {
         title: String,
         body: String,
@@ -62,7 +93,7 @@ enum Content {
 
 #[derive(Debug, Deserialize)]
 pub struct ProjectV2FieldCommon {
-    name: String,
+    pub name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,6 +114,17 @@ pub enum Field {
     ProjectV2IterationField(ProjectV2IterationField),
     ProjectV2SingleSelectField(ProjectV2SingleSelectField),
     Empty,
+}
+
+impl Field {
+    pub fn get_name(&self) -> &str {
+        match self {
+            Field::ProjectV2Field(pf) => &pf.name,
+            Field::ProjectV2IterationField(pif) => &pif.name,
+            Field::ProjectV2SingleSelectField(pssf) => &pssf.name,
+            Field::Empty => "",
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -112,8 +154,8 @@ pub struct IterationConfig {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FieldOption {
-    id: String,
-    name: String,
+    pub id: String,
+    pub name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -131,85 +173,3 @@ pub struct Card {
     pub creator: User,
 }
 
-
-// #[derive(Debug, Deserialize)]
-// pub struct Project {
-//     info: ProjectInfo,
-//     fields: Fields,
-//     items: Items,
-// }
-//
-// #[derive(Debug, Deserialize)]
-// #[serde(rename_all = "snake_case")]
-// pub struct Projects {
-//     pub(crate) projects: Vec<ProjectInfo>,
-//     #[serde(rename = "totalCount")]
-//     total_count: u8,
-// }
-//
-// #[derive(Debug, Deserialize)]
-// #[serde(rename_all = "snake_case")]
-// pub struct ProjectInfo {
-//     number: u8,
-//     url: String,
-//     #[serde(rename = "shortDescription")]
-//     short_description: String,
-//     public: bool,
-//     closed: bool,
-//     template: bool,
-//     id: String,
-//     pub title: String,
-//     readme: String,
-//     items: Count,
-//     fields: Count,
-//     owner: Owner,
-// }
-//
-// #[derive(Debug, Deserialize)]
-// pub struct Count {
-//     #[serde(rename = "totalCount")]
-//     total_count: u8,
-// }
-//
-// #[derive(Debug, Deserialize)]
-// pub struct Owner {
-//     login: String,
-// }
-//
-// #[derive(Debug, Deserialize)]
-// pub(crate) struct Fields {
-//     pub fields: Vec<Field>,
-// }
-//
-// #[derive(Debug, Deserialize)]
-// pub struct Field {
-//     pub id: String,
-//     pub name: String,
-//     pub options: Option<Vec<FieldOption>>,
-//     //type: String,
-// }
-//
-// #[derive(Debug, Deserialize, Clone)]
-// pub struct FieldOption {
-//     id: String,
-//     pub(crate) name: String,
-// }
-//
-// #[derive(Debug, Deserialize)]
-// pub(crate) struct Items {
-//     pub(crate) items: Vec<Item>,
-// }
-//
-// #[derive(Debug, Deserialize, Clone)]
-// pub struct Item {
-//     content: Content,
-//     id: String,
-//     #[serde(flatten)]
-//     pub(crate) fields: HashMap<String, Value>,
-// }
-//
-// #[derive(Debug, Deserialize, Clone)]
-// pub struct Content {
-//     body: String,
-//     title: String,
-// }
