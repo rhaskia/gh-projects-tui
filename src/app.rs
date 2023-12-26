@@ -78,6 +78,7 @@ impl App {
             let user = github::get_user(&cred.token)?;
             let projects = github::get_project_ids(&cred.token, &user.login)?;
             let items = github::fetch_project_items(&cred.token, &projects[self.project_state].id)?;
+<<<<<<< HEAD
             let fields =
                 github::fetch_project_fields(&cred.token, &projects[self.project_state].id)?;
 
@@ -102,6 +103,22 @@ impl App {
         self.user_info
             .as_mut()
             .ok_or_else(|| anyhow!("No user info loaded"))
+=======
+            let fields = github::fetch_project_fields(&cred.token, &projects[self.project_state].id)?;
+
+            self.user_info = Some(UserInfo { user, projects, items, fields })
+        }
+
+        Ok(()) 
+    }
+
+    pub fn info(&self) -> anyhow::Result<&UserInfo> {
+        self.user_info.as_ref().ok_or_else(|| anyhow!("No user info loaded"))
+    }
+
+    pub fn mut_info(&mut self) -> anyhow::Result<&mut UserInfo> {
+        self.user_info.as_mut().ok_or_else(|| anyhow!("No user info loaded"))
+>>>>>>> main
     }
 
     pub fn right(&mut self) {
@@ -158,11 +175,21 @@ impl App {
         self.menu_state = InputMode::Input;
 
         if let Some(info) = &self.user_info {
+<<<<<<< HEAD
             let field_value = info.items[self.item_state]
                 .field_values
                 .name_from_field(&info.fields[self.field_state].get_name());
 
             self.input.current_input = field_value.to_owned();
+=======
+            let field_value = &info.items[self.item_state].field_values.nodes[self.field_state];
+
+            if let ProjectV2ItemFieldValue::ProjectV2ItemFieldTextValue { text, field } =
+                field_value
+            {
+                self.input.current_input = text.clone();
+            }
+>>>>>>> main
         }
 
         // let index_field = self.fields[self.field_state]..to_ascii_lowercase();
@@ -173,6 +200,12 @@ impl App {
         //     .unwrap_or(&Value::String(String::new()))
         //     .as_str().unwrap_or(&*String::new()));
         //
+<<<<<<< HEAD
+=======
+        // self.input.cursor_pos = self.input.current_input.len() as u16;
+        //
+        // self.input.current_options = self.fields[self.field_state].options.clone();
+>>>>>>> main
     }
 
     pub fn backspace(&mut self) {
@@ -228,6 +261,7 @@ impl App {
         }
     }
 
+<<<<<<< HEAD
     pub fn get_field_at(&self, item: usize, field: usize) -> anyhow::Result<&ProjectV2ItemField> {
         if let Some(app_info) = &self.user_info {
             let index_field = app_info.fields[field].get_name().to_ascii_lowercase();
@@ -237,6 +271,16 @@ impl App {
         } else {
             anyhow::bail!("No app info")
         }
+=======
+    pub fn get_field_at(&self, item: usize, field: usize) -> &str {
+        if let Some(app_info) = &self.user_info {
+            let index_field = app_info.fields[field].get_name().to_ascii_lowercase();
+            app_info.items[item]
+                .field_values
+                .get_from_field(&index_field)
+        }
+        else { "" }
+>>>>>>> main
     }
 }
 
