@@ -78,7 +78,6 @@ impl App {
             let user = github::get_user(&cred.token)?;
             let projects = github::get_project_ids(&cred.token, &user.login)?;
             let items = github::fetch_project_items(&cred.token, &projects[self.project_state].id)?;
-<<<<<<< HEAD
             let fields =
                 github::fetch_project_fields(&cred.token, &projects[self.project_state].id)?;
 
@@ -103,22 +102,6 @@ impl App {
         self.user_info
             .as_mut()
             .ok_or_else(|| anyhow!("No user info loaded"))
-=======
-            let fields = github::fetch_project_fields(&cred.token, &projects[self.project_state].id)?;
-
-            self.user_info = Some(UserInfo { user, projects, items, fields })
-        }
-
-        Ok(()) 
-    }
-
-    pub fn info(&self) -> anyhow::Result<&UserInfo> {
-        self.user_info.as_ref().ok_or_else(|| anyhow!("No user info loaded"))
-    }
-
-    pub fn mut_info(&mut self) -> anyhow::Result<&mut UserInfo> {
-        self.user_info.as_mut().ok_or_else(|| anyhow!("No user info loaded"))
->>>>>>> main
     }
 
     pub fn right(&mut self) {
@@ -175,37 +158,13 @@ impl App {
         self.menu_state = InputMode::Input;
 
         if let Some(info) = &self.user_info {
-<<<<<<< HEAD
             let field_value = info.items[self.item_state]
                 .field_values
                 .name_from_field(&info.fields[self.field_state].get_name());
 
-            self.input.current_input = field_value.to_owned();
-=======
-            let field_value = &info.items[self.item_state].field_values.nodes[self.field_state];
-
-            if let ProjectV2ItemFieldValue::ProjectV2ItemFieldTextValue { text, field } =
-                field_value
-            {
-                self.input.current_input = text.clone();
-            }
->>>>>>> main
+            self.input.current_input = field_value.to_string();
+            self.input.cursor_pos = self.input.current_input.len() as u16;
         }
-
-        // let index_field = self.fields[self.field_state]..to_ascii_lowercase();
-        //
-        // self.input.current_input = String::from(
-        //     self.items[self.item_state]
-        //     .fields.get(&*index_field)
-        //     .unwrap_or(&Value::String(String::new()))
-        //     .as_str().unwrap_or(&*String::new()));
-        //
-<<<<<<< HEAD
-=======
-        // self.input.cursor_pos = self.input.current_input.len() as u16;
-        //
-        // self.input.current_options = self.fields[self.field_state].options.clone();
->>>>>>> main
     }
 
     pub fn backspace(&mut self) {
@@ -238,14 +197,35 @@ impl App {
         }
     }
 
-    pub fn save_field(&mut self, s: String) {
-        self.set_field_at(self.item_state, self.field_state, s);
+    pub fn save_field(&mut self, s: String) -> anyhow::Result<()> {
+        if let Some(app_info) = &self.user_info {
+            match self.get_field_at(self.item_state, self.field_state)? {
+                ProjectV2ItemField::Empty(v) => {}
+                ProjectV2ItemField::TextValue { text, field } => {}
+                ProjectV2ItemField::DateValue { date, field } => {}
+                ProjectV2ItemField::SingleSelectValue { name, field } => {}
+                ProjectV2ItemField::NumberValue { number, field } => {}
+                ProjectV2ItemField::IterationValue {
+                    duration,
+                    title,
+                    field,
+                } => {}
+            };
 
-        // TODO github commands
-        // Offline Saving
+            github::update_item_field(
+                &self.id.clone().ok_or_else(|| anyhow!("No Credential found"))?.token,
+                &app_info.projects[self.project_state].id,
+                &app_info.items[self.item_state].id,
+                app_info.fields[self.field_state].get_id(),
+                &s,
+            )?;
+            self.reload_info()?;
+        }
+
+        Ok(())
     }
 
-    pub fn set_string(&mut self) {
+    pub fn set_string(&mut self) -> Result<(), anyhow::Error> {
         self.save_field(self.input.current_input.clone())
     }
 
@@ -261,30 +241,19 @@ impl App {
         }
     }
 
-<<<<<<< HEAD
     pub fn get_field_at(&self, item: usize, field: usize) -> anyhow::Result<&ProjectV2ItemField> {
         if let Some(app_info) = &self.user_info {
-            let index_field = app_info.fields[field].get_name().to_ascii_lowercase();
+            let index_field = app_info.fields[field].get_name();
             Ok(app_info.items[item]
                 .field_values
                 .get_from_field(&index_field))
         } else {
             anyhow::bail!("No app info")
         }
-=======
-    pub fn get_field_at(&self, item: usize, field: usize) -> &str {
-        if let Some(app_info) = &self.user_info {
-            let index_field = app_info.fields[field].get_name().to_ascii_lowercase();
-            app_info.items[item]
-                .field_values
-                .get_from_field(&index_field)
-        }
-        else { "" }
->>>>>>> main
     }
 }
 
-pub fn insert_mode_keys(key: KeyEvent, app: &mut App) {
+pub fn insert_mode_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<()> {
     match key.code {
         KeyCode::Esc => {
             app.menu_state = InputMode::Normal;
@@ -293,7 +262,8 @@ pub fn insert_mode_keys(key: KeyEvent, app: &mut App) {
     }
 
     if let Some(app_info) = &app.user_info {
-        if let Field::ProjectV2SingleSelectField(pssf) = &app_info.fields[app.field_state] {
+        if let Field::ProjectV2SingleSelectField(field) 
+        = &app_info.fields[app.field_state] {
             match key.code {
                 KeyCode::Char('j') | KeyCode::Down => {
                     app.shift_option_down();
@@ -315,7 +285,7 @@ pub fn insert_mode_keys(key: KeyEvent, app: &mut App) {
                     app.backspace();
                 }
 
-                KeyCode::Enter => app.set_string(),
+                KeyCode::Enter => app.set_string()?,
 
                 KeyCode::Left => {
                     app.cursor_left();
@@ -327,6 +297,8 @@ pub fn insert_mode_keys(key: KeyEvent, app: &mut App) {
             }
         }
     }
+
+    Ok(())
 }
 
 pub fn normal_mode_keys(key: KeyEvent, app: &mut App) {

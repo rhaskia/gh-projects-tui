@@ -9,12 +9,8 @@
 
 use crate::app::{insert_mode_keys, normal_mode_keys, App, InputMode};
 use crate::github::load_id;
-<<<<<<< HEAD
 use crate::project::{Field, Item, ProjectV2ItemField};
 use std::rc::Rc;
-=======
-use crate::project::{Field, Item};
->>>>>>> main
 
 use anyhow::anyhow;
 use crossterm::{
@@ -27,18 +23,13 @@ use serde_json::Value;
 use std::cmp;
 use std::io::{stdout, Result};
 
-<<<<<<< HEAD
 pub fn start_app(mut app: App) -> anyhow::Result<App> {
-=======
-pub fn start_app(mut app: App) -> anyhow::Result<()> {
->>>>>>> main
     // get id
     app.id = Some(load_id());
 
     // Load user info and load it into the App
-    let err = app.reload_info();
+    let err = app.reload_info()?;
 
-<<<<<<< HEAD
     println!("{:?}, \n{:?}", err, app.user_info);
 
     // Actual UI once loaded
@@ -50,34 +41,21 @@ pub fn start_app(mut app: App) -> anyhow::Result<()> {
 }
 
 pub(crate) fn draw(mut app: App) -> anyhow::Result<App> {
-=======
-    println!("{:?}", err);
-
-    // Actual UI once loaded
-    draw(app)?;
-
-    println!("something went wrong ):");
-
-    Ok(())
-}
-
-pub(crate) fn draw(mut app: App) -> anyhow::Result<()> {
->>>>>>> main
     stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     terminal.clear()?;
 
     //let rows = get_rows(&app.items, &app.()fields);
-    let n_widths = get_widths(&app.info()?.fields, &app.info()?.items);
-    let headers = get_headers(&app.info()?.fields, &n_widths);
+    let mut n_widths = get_widths(&app, &app.info()?.fields, &app.info()?.items);
+    let mut widths = constrained_widths(&n_widths);
+    let mut headers = get_headers(&app.info()?.fields, &n_widths);
     let mut offset = 0;
-    let widths = constrained_widths(&n_widths);
-
+    
     loop {
         terminal.draw(|frame| {
             // TODO cut this ugly closure up
-
+            
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints(vec![
@@ -136,22 +114,12 @@ pub(crate) fn draw(mut app: App) -> anyhow::Result<()> {
 
             for i in offset..app.info().unwrap().fields.len() {
                 frame.render_stateful_widget(
-<<<<<<< HEAD
                     draw_list(&app.info().unwrap().items, &app.info().unwrap().fields, i)
                         .highlight_style(if i == app.field_state {
                             Style::reversed(Default::default())
                         } else {
                             Style::not_reversed(Default::default())
                         }),
-=======
-                    draw_list(&app.info().unwrap().items, &app.info().unwrap().fields, i).highlight_style(
-                        if i == app.field_state {
-                            Style::reversed(Default::default())
-                        } else {
-                            Style::not_reversed(Default::default())
-                        },
-                    ),
->>>>>>> main
                     lists_layout[i - offset],
                     &mut list_state.clone(),
                 );
@@ -171,51 +139,7 @@ pub(crate) fn draw(mut app: App) -> anyhow::Result<()> {
             frame.render_widget(Paragraph::new(">"), Rect::new(0, cursor_pos, 1, 1));
 
             if app.menu_state == InputMode::Input {
-<<<<<<< HEAD
                 draw_editor(frame, &app, &lists_layout, offset);
-=======
-                let mut position = lists_layout[app.field_state - offset].clone();
-
-                if let Some(ref options) = app.input.current_options {
-                    //if app.item_state
-
-                    position.y = position.y + (app.item_state as u16); //- (app.input.current_option as u16);
-
-                    position.x -= 1;
-                    position.width += 1;
-                    position.height = options.len() as u16;
-
-                    let block = Block::new().borders(Borders::LEFT | Borders::RIGHT);
-
-                    let option_names: Vec<ListItem> = options
-                        .iter()
-                        .map(|n| ListItem::new(n.name.clone()))
-                        .collect();
-
-                    frame.render_widget(Clear, position);
-
-                    frame.render_stateful_widget(
-                        List::new(option_names)
-                            .block(block)
-                            .highlight_style(Style::new().reversed()),
-                        position,
-                        &mut state_wrapper(app.input.current_option),
-                    );
-                } else {
-                    position.y = position.y + (app.item_state as u16);
-                    position.height = 1;
-
-                    frame.render_widget(Clear, position);
-
-                    frame.render_widget(
-                        Paragraph::new(app.input.current_input.clone())
-                            .style(Style::red(Default::default())),
-                        position,
-                    );
-
-                    frame.set_cursor(position.x + app.input.cursor_pos, position.y);
-                }
->>>>>>> main
             }
 
             frame.render_widget(
@@ -233,8 +157,8 @@ pub(crate) fn draw(mut app: App) -> anyhow::Result<()> {
                 if key.kind == KeyEventKind::Press {
                     match &app.menu_state {
                         InputMode::Normal => normal_mode_keys(key, &mut app),
-                        _ => insert_mode_keys(key, &mut app),
-                    }
+                        _ => insert_mode_keys(key, &mut app)?,
+                    };
                 }
             }
         }
@@ -249,7 +173,12 @@ pub(crate) fn draw(mut app: App) -> anyhow::Result<()> {
     Ok(app)
 }
 
-fn draw_editor(frame: &mut Frame, app: &App, lists_layout: &Rc<[Rect]>, offset: usize) -> anyhow::Result<()> {
+fn draw_editor(
+    frame: &mut Frame,
+    app: &App,
+    lists_layout: &Rc<[Rect]>,
+    offset: usize,
+) -> anyhow::Result<()> {
     let mut position = lists_layout[app.field_state - offset].clone();
 
     use ProjectV2ItemField::*;
@@ -262,7 +191,8 @@ fn draw_editor(frame: &mut Frame, app: &App, lists_layout: &Rc<[Rect]>, offset: 
             frame.render_widget(Clear, position);
 
             frame.render_widget(
-                Paragraph::new(app.input.current_input.clone()).style(Style::red(Default::default())),
+                Paragraph::new(app.input.current_input.clone())
+                    .style(Style::red(Default::default())),
                 position,
             );
 
@@ -271,16 +201,18 @@ fn draw_editor(frame: &mut Frame, app: &App, lists_layout: &Rc<[Rect]>, offset: 
 
         // With options
         SingleSelectValue { name, field } => {
-            if let Field::ProjectV2SingleSelectField(full_field) = &app.info()?.fields[app.field_state] {
+            if let Field::ProjectV2SingleSelectField(field) =
+                &app.info()?.fields[app.field_state]
+            {
                 position.y = position.y + (app.item_state as u16); //- (app.input.current_option as u16);
 
                 position.x -= 1;
                 position.width += 1;
-                position.height = full_field.options.len() as u16;
+                position.height = field.options.len() as u16;
 
                 let block = Block::new().borders(Borders::LEFT | Borders::RIGHT);
 
-                let option_names: Vec<ListItem> = full_field.options 
+                let option_names: Vec<ListItem> = field.options
                     .iter()
                     .map(|n| ListItem::new(n.name.clone()))
                     .collect();
@@ -297,13 +229,19 @@ fn draw_editor(frame: &mut Frame, app: &App, lists_layout: &Rc<[Rect]>, offset: 
             }
         }
 
-        // Date, calendar widget?
-        DateValue { date, field } => {
+        // Number
+        NumberValue { number, field } => {},
 
-        }
+        //Whatever
+        IterationValue { duration, title, field } => {},
+
+        // Date, calendar widget?
+        DateValue { date, field } => {}
 
         // Ignore
-        Empty(v) => {}
+        Empty(v) => {
+            panic!("empty");
+        }
     }
 
     Ok(())
@@ -340,11 +278,7 @@ fn get_headers(fields: &Vec<Field>, widths: &Vec<u16>) -> Vec<String> {
         .map(|i| {
             format!(
                 "{:─<w$}",
-<<<<<<< HEAD
                 fields[i].get_name(),
-=======
-                fields[i].get_name().clone(),
->>>>>>> main
                 w = (widths[i] as usize - 1)
             )
         })
@@ -359,9 +293,10 @@ fn draw_list<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> 
 
 fn get_info_text(app: &App, items: &Vec<Item>, fields: &Vec<Field>) -> String {
     format!(
-        "{}/{:?}: {:?}",
+        "{}/{:?}, {}: {:?}",
         app.field_state,
         app.item_state,
+        app.input.current_input,
         items[app.item_state]
             .field_values
             .get_from_field(fields[app.field_state].get_name())
@@ -369,17 +304,9 @@ fn get_info_text(app: &App, items: &Vec<Item>, fields: &Vec<Field>) -> String {
 }
 
 fn get_column<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> Vec<ListItem<'a>> {
-<<<<<<< HEAD
     items
         .iter()
         .map(|item| ListItem::new(item.field_values.name_from_field(fields[index].get_name())))
-=======
-    let index_field = fields[index].get_name().to_ascii_lowercase();
-
-    items
-        .iter()
-        .map(|item| ListItem::new(item.field_values.get_from_field(&*index_field)))
->>>>>>> main
         .collect()
 }
 
@@ -391,11 +318,7 @@ fn get_rows<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>) -> Vec<Row<'a>> {
                 .iter()
                 .map(move |f| {
                     item.field_values
-<<<<<<< HEAD
                         .name_from_field(&*f.get_name().to_ascii_lowercase())
-=======
-                        .get_from_field(&*f.get_name().to_ascii_lowercase())
->>>>>>> main
                 })
                 .collect::<Vec<&str>>();
 
@@ -408,44 +331,46 @@ fn constrained_widths(i: &Vec<u16>) -> Vec<Constraint> {
     i.iter().map(|f| Constraint::Min(*f)).collect()
 }
 
-fn get_widths(fields: &Vec<Field>, items: &Vec<Item>) -> Vec<u16> {
+fn get_widths(app: &App, fields: &Vec<Field>, items: &Vec<Item>) -> Vec<u16> {
     fields
         .iter()
-        .map(|field| {
-            cmp::max(
-                field.get_name().len(),
-                match &field {
-                    Field::ProjectV2SingleSelectField(pf) => pf.options.iter().fold(0, |max, s| {
-                        if s.name.len() > max {
-                            s.name.len()
-                        } else {
-                            max
-                        }
-                    }),
-
-                    // has options
-
-                    // pure string
-                    _ => items.iter().fold(0, |max, i| {
-<<<<<<< HEAD
-                        let l = i.field_values.name_from_field(&*field.get_name()).len();
-=======
-                        let l = i
-                            .field_values
-                            .get_from_field(&*field.get_name().to_ascii_lowercase())
-                            .len();
->>>>>>> main
-                        if l > max {
-                            l
-                        } else {
-                            max
-                        }
-                    }),
-                },
-            ) as u16
-                + 1
-        })
+        .map(|field| get_width(app, field, fields, items) as u16 + 1)
         .collect()
+}
+
+fn get_width(app: &App, field: &Field, fields: &Vec<Field>, items: &Vec<Item>) -> usize {
+    let currently_editing = field.get_id() == fields[app.field_state].get_id();
+
+    let max = cmp::max(
+        field.get_name().len(),
+        match &field {
+            Field::ProjectV2SingleSelectField(field) => field.options.iter().fold(0, |max, s| {
+                if s.name.len() > max {
+                    s.name.len()
+                } else {
+                    max
+                }
+            }),
+
+            // has options
+
+            // pure string
+            _ => items.iter().fold(0, |max, i| {
+                let l = i.field_values.name_from_field(&*field.get_name()).len();
+                if l > max {
+                    l
+                } else {
+                    max
+                }
+            }),
+        },
+    );
+
+    if currently_editing {
+        cmp::max(max, app.input.current_input.len())
+    } else {
+        max
+    }
 }
 
 fn draw_table<'a>(rows: Vec<Row<'a>>, header: Row<'a>) -> Table<'a> {

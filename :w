@@ -7,7 +7,7 @@
 #![allow(unused_mut)]
 #![allow(unused_variables)]
 
-use std::{collections::HashMap, borrow::Cow};
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::*;
 
@@ -59,9 +59,9 @@ impl ProjectV2ItemField {
             Empty(v) => "",
             TextValue { text, field } => &text, 
             DateValue { date, field } => &date,
-            SingleSelectValue { name, field } => &name, 
-            NumberValue { number, field } => "6",
-            IterationValue { duration, title, field } => &title, 
+            SingleSelectValue { name, field } => &name,
+            NumberValue { number, field } => &format!("{number}"),
+            IterationValue { duration, title, field } => title, 
         }
     }
 }
@@ -123,6 +123,11 @@ pub enum Content {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ProjectV2FieldCommon {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct Nodes<T> {
     pub nodes: Vec<T>,
 }
@@ -133,40 +138,33 @@ pub struct Project {
     pub title: String,
 }
 
-
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum Field {
-    ProjectV2Field(ProjectV2Field),
-    ProjectV2IterationField(ProjectV2IterationField),
+    ProjectV2Field { field: ProjectV2FieldCommon },
+    ProjectV2IterationField{ field: ProjectV2FieldCommon, configuration: IterationConfig},
     ProjectV2SingleSelectField(ProjectV2SingleSelectField),
-    Empty(Value),
+    Empty,
 }
 
 impl Field {
     pub fn get_name(&self) -> &str {
         match self {
-            Field::ProjectV2Field(pf)  => &pf.name,
-            Field::ProjectV2IterationField(pf) => &pf.name,
-            Field::ProjectV2SingleSelectField(pf) => &pf.name,
-            Field::Empty(v) => "",
+            Field::ProjectV2Field(pf) => &pf.name,
+            Field::ProjectV2IterationField(pif) => &pif.name,
+            Field::ProjectV2SingleSelectField(pssf) => &pssf.name,
+            Field::Empty => "",
         }
     }
 
     pub fn get_id(&self) -> &str {
         match self {
-            Field::ProjectV2Field(field) => &field.id,
-            Field::ProjectV2IterationField(field) => &field.id,
-            Field::ProjectV2SingleSelectField(field) =>  &field.id,
-            Field::Empty(v) => "",
+            Field::ProjectV2Field(pf) => &pf.name,
+            Field::ProjectV2IterationField(pif) => &pif.name,
+            Field::ProjectV2SingleSelectField(pssf) => &pssf.name,
+            Field::Empty => "",
         }
     }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProjectV2Field {
-    pub id: String,
-    pub name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -176,24 +174,15 @@ pub struct ProjectV2FieldCommon {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ProjectV2IterationField {
-    pub id: String,
-    pub name: String,
-    pub configuration: IterationConfig,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ProjectV2SingleSelectField {
-    pub id: String,
-    pub name: String,
-    pub options: Vec<FieldOption>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all(serialize = "snake_case"))]
 pub struct Iteration {
     pub start_date: String,
     pub id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProjectV2IterationField {
+    
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -205,6 +194,13 @@ pub struct IterationConfig {
 pub struct FieldOption {
     pub id: String,
     pub name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProjectV2SingleSelectField {
+    pub id: String,
+    pub name: String,
+    pub options: Vec<FieldOption>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -148,6 +148,7 @@ pub fn fetch_project_items(token: &str, project_id: &str) -> anyhow::Result<Vec<
                                         field {
                                             ... on ProjectV2FieldCommon {
                                                 name
+                                                id
                                             }
                                         }
                                     }
@@ -156,6 +157,7 @@ pub fn fetch_project_items(token: &str, project_id: &str) -> anyhow::Result<Vec<
                                         field {
                                             ... on ProjectV2FieldCommon {
                                                 name
+                                                id
                                             }
                                         }
                                     }
@@ -164,6 +166,7 @@ pub fn fetch_project_items(token: &str, project_id: &str) -> anyhow::Result<Vec<
                                         field {
                                             ... on ProjectV2FieldCommon {
                                                 name
+                                                id
                                             }
                                         }
                                     }
@@ -240,7 +243,7 @@ pub fn update_item_field(
     item_id: &str,
     field_id: &str,
     new_text: &str,
-) {
+) -> anyhow::Result<Item> {
     let client = reqwest::Client::new();
 
     let query = r#"mutation {
@@ -265,6 +268,11 @@ pub fn update_item_field(
         .replace("ITEM_ID", item_id)
         .replace("FIELD_ID", field_id)
         .replace("NEW_TEXT", new_text);
+
+    let response = send_query_request(token, &query)?;
+    let response_json = response.json::<Value>()?;
+
+    panic!("{response_json}")
 }
 
 pub fn add_draft_issue(
