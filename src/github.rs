@@ -243,7 +243,7 @@ pub fn update_item_field(
     item_id: &str,
     field_id: &str,
     new_text: &str,
-) -> anyhow::Result<Item> {
+) -> anyhow::Result<ItemMutation> {
     let client = reqwest::Client::new();
 
     let query = r#"mutation {
@@ -271,8 +271,9 @@ pub fn update_item_field(
 
     let response = send_query_request(token, &query)?;
     let response_json = response.json::<Value>()?;
+    let mutation = &response_json["data"]["updateProjectV2ItemFieldValue"]["projectV2Item"];
 
-    panic!("{response_json}")
+    Ok(serde_json::from_value(mutation.clone())?)
 }
 
 pub fn add_draft_issue(

@@ -25,6 +25,11 @@ pub struct Item {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ItemMutation {
+    id: String  
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum ProjectV2ItemField {
     TextValue {

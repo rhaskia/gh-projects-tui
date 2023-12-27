@@ -213,7 +213,11 @@ impl App {
             };
 
             github::update_item_field(
-                &self.id.clone().ok_or_else(|| anyhow!("No Credential found"))?.token,
+                &self
+                    .id
+                    .clone()
+                    .ok_or_else(|| anyhow!("No Credential found"))?
+                    .token,
                 &app_info.projects[self.project_state].id,
                 &app_info.items[self.item_state].id,
                 app_info.fields[self.field_state].get_id(),
@@ -262,37 +266,31 @@ pub fn insert_mode_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<()> {
     }
 
     if let Some(app_info) = &app.user_info {
-        if let Field::ProjectV2SingleSelectField(field) 
-        = &app_info.fields[app.field_state] {
+        if let Field::ProjectV2SingleSelectField(field) = &app_info.fields[app.field_state] {
             match key.code {
-                KeyCode::Char('j') | KeyCode::Down => {
-                    app.shift_option_down();
-                }
-                KeyCode::Char('k') | KeyCode::Up => {
-                    app.shift_option_up();
-                }
+                KeyCode::Char('j') | KeyCode::Down => app.shift_option_down(),
+                KeyCode::Char('k') | KeyCode::Up => app.shift_option_up(),
 
-                KeyCode::Enter => app.set_option(),
+                KeyCode::Enter => {
+                    app.set_option();
+                    app.menu_state = InputMode::Normal;
+                }
 
                 _ => {}
             }
         } else {
             match key.code {
-                KeyCode::Char(a) => {
-                    app.insert_char(a);
-                }
-                KeyCode::Backspace => {
-                    app.backspace();
+                KeyCode::Char(a) => app.insert_char(a),
+                KeyCode::Backspace => app.backspace(),
+
+                KeyCode::Enter => {
+                    app.set_string()?;
+                    app.menu_state = InputMode::Normal
                 }
 
-                KeyCode::Enter => app.set_string()?,
+                KeyCode::Left => app.cursor_left(),
+                KeyCode::Right => app.cursor_right(),
 
-                KeyCode::Left => {
-                    app.cursor_left();
-                }
-                KeyCode::Right => {
-                    app.cursor_right();
-                }
                 _ => {}
             }
         }
