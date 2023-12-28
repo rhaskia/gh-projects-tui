@@ -53,9 +53,12 @@ pub(crate) fn draw(mut app: App) -> anyhow::Result<App> {
     let mut offset = 0;
     
     loop {
+        n_widths = get_widths(&app, &app.info()?.fields, &app.info()?.items);
+        widths = constrained_widths(&n_widths);
+        headers = get_headers(&app.info()?.fields, &n_widths);
+
         terminal.draw(|frame| {
             // TODO cut this ugly closure up
-            
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints(vec![
