@@ -1,18 +1,16 @@
-use crossterm::terminal::disable_raw_mode;
-
-use crate::github::*;
-
 mod app;
 mod github;
 mod project;
 mod ui;
 
 fn main() {
-    let app = app::App::setup();
+    let app = app::App::new();
 
-    let t = ui::start_app(app);
-    disable_raw_mode();
+    let t = ui::draw_app(app);
+    
+    // Make sure the user's terminal doesn't break if
+    // an error happens
+    ui::disable_terminal(); 
+
     println!("{:?}", t);
-
-    //add_draft_issue(&cred.token, &ids[0].id, "test body", "test title");
 }

@@ -10,6 +10,7 @@
 use std::{collections::HashMap, borrow::Cow};
 use serde::{Deserialize, Serialize};
 use serde_json::*;
+use ratatui::style::{Style, Stylize};
 
 #[derive(Debug, Deserialize)]
 pub struct User {
@@ -34,39 +35,70 @@ pub struct ItemMutation {
 pub enum ProjectV2ItemField {
     TextValue {
         text: String,
-        field: ProjectV2FieldCommon,
+        field: Field,
     },
     DateValue {
         date: String, // Assuming date is a string
-        field: ProjectV2FieldCommon,
+        field: Field,
     },
     SingleSelectValue {
         name: String,
-        field: ProjectV2FieldCommon,
+        field: Field,
     },
     NumberValue {
-        number: u16,
-        field: ProjectV2FieldCommon,
+        number: f32,
+        field: Field,
     },
     IterationValue {
         duration: u8,
         title: String,
-        field: ProjectV2FieldCommon,
+        field: Field,
     },
     Empty(Value), // Represents the empty field
 }
 
 impl ProjectV2ItemField {
-    pub fn value(&self) -> &str {
+    pub fn value(&self) -> String {
         use ProjectV2ItemField::*;
 
         match self {
-            Empty(v) => "",
-            TextValue { text, field } => &text, 
-            DateValue { date, field } => &date,
-            SingleSelectValue { name, field } => &name, 
-            NumberValue { number, field } => "6",
-            IterationValue { duration, title, field } => &title, 
+            Empty(v) => String::new(),
+            TextValue { text, field } => text.to_owned(), 
+            DateValue { date, field } => date.to_owned(),
+            SingleSelectValue { name, field } => name.to_owned(), 
+            NumberValue { number, field } => number.to_string(),
+            IterationValue { duration, title, field } => title.to_owned(), 
+        }
+    }
+
+    pub fn style(&self) -> Style {
+        use ProjectV2ItemField::*;
+        
+        match self {
+            TextValue { text, field } => Style::default(),
+            DateValue { date, field } => Style::default().bold(),
+            SingleSelectValue { name, field } => {
+                if let Field::ProjectV2SingleSelectField(f) = field {
+                    
+
+                    return match f.options.iter().find(|v| &v.name == name).unwrap().color.as_str() {
+                        "GRAY" => Style::default().yellow(),
+                        "BLUE" => Style::default().blue(),
+                        "GREEN" => Style::default().green(),
+                        "ORANGE" => Style::default().light_red(),
+                        "PINK" => Style::default().light_magenta(),
+                        "PURPLE" => Style::default().magenta(),
+                        "YELLOW" => Style::default().yellow(),
+
+                        _ => Style::default(),
+                    };
+                }
+
+                Style::default()
+            },
+            NumberValue { number, field } => Style::default().light_blue(),
+            IterationValue { duration, title, field } => Style::default().light_green(), 
+            Empty(_) => Style::default(),
         }
     }
 }
@@ -78,17 +110,42 @@ impl Nodes<ProjectV2ItemField> {
         self.nodes.iter().find(|v| 
         match v {
             Empty(v) => "",
-            TextValue { text, field } => &field.name, 
-            DateValue { date, field } => &field.name,
-            SingleSelectValue { name, field } => &field.name,
-            NumberValue { number, field } => &field.name,
-            IterationValue { duration, title, field } => &field.name,
+            TextValue { text, field } => &field.get_name(), 
+            DateValue { date, field } => &field.get_name(),
+            SingleSelectValue { name, field } => &field.get_name(),
+            NumberValue { number, field } => &field.get_name(),
+            IterationValue { duration, title, field } => &field.get_name(),
         } == s).unwrap_or(&Empty(Value::Null))
     }
 
-    pub fn name_from_field(&self, s: &str) -> &str {
+    pub fn name_from_field(&self, s: &str) -> String {
         self.get_from_field(s).value()
     }
+
+    pub fn set_value(&mut self, index: &str, value: &str) {
+        use ProjectV2ItemField::*;
+
+        let s = value.to_string();
+        
+        if let Some(item_field) = self.nodes.iter_mut().find(|v| 
+            match v {
+                Empty(_) => false,
+                TextValue { text, field } => field.get_name() == index,
+                DateValue { date, field } => field.get_name() == index,
+                SingleSelectValue { name, field } => field.get_name() == index,
+                NumberValue { number, field } => field.get_name() == index,
+                IterationValue { duration, title, field } => field.get_name() == index,
+            }) {
+                match item_field {
+                    Empty(_) => {} // Handle Empty variant as needed,
+                    TextValue { text, field } => *text = s,
+                    DateValue { date, field } => *date = s,
+                    SingleSelectValue { name, field } => *name = s,
+                    NumberValue { number, field } => *number = s.parse().unwrap(),
+                    IterationValue { duration, title, field } => *title = s,
+                };
+            }
+        }
 }
 
 #[derive(Debug, Deserialize)]
@@ -142,9 +199,9 @@ pub struct Project {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum Field {
-    ProjectV2Field(ProjectV2Field),
-    ProjectV2IterationField(ProjectV2IterationField),
     ProjectV2SingleSelectField(ProjectV2SingleSelectField),
+    ProjectV2IterationField(ProjectV2IterationField),
+    ProjectV2Field(ProjectV2Field),
     Empty(Value),
 }
 
@@ -206,10 +263,12 @@ pub struct IterationConfig {
     pub iterations: Vec<Iteration>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct FieldOption {
     pub id: String,
     pub name: String,
+    pub color: String,
+    pub description: String,
 }
 
 #[derive(Debug, Deserialize)]

@@ -1,21 +1,10 @@
-// TODO: fix on release
-#![allow(dead_code)]
-#![allow(unused_assignments)]
-#![allow(unused_attributes)]
-#![allow(unused_imports)]
-#![allow(unused_macros)]
-#![allow(unused_mut)]
-#![allow(unused_variables)]
-
 const CLIENT_ID: &str = include_str!("client_id");
 const CLIENT_SECRET: &str = include_str!("client_secret");
 
-use anyhow::{anyhow, bail};
-use github_device_flow::authorize;
+use anyhow::anyhow;
 use reqwest::blocking::Response;
-use serde::{Deserialize, Serialize};
-use serde_json::{from_str, Value};
-use std::fs;
+use serde::Serialize;
+use serde_json::Value;
 
 use crate::project::*;
 
@@ -108,6 +97,8 @@ pub fn fetch_project_fields(token: &str, project_id: &str) -> Result<Vec<Field>,
                                     options {
                                         id
                                         name
+                                        color
+                                        description
                                     }
                                 }
                             }
@@ -127,6 +118,8 @@ pub fn fetch_project_fields(token: &str, project_id: &str) -> Result<Vec<Field>,
         .send()?;
 
     let response_json: Value = response.json()?;
+
+    //anyhow::bail!("{:?}", &response_json);
 
     let nodes = rip_data(&response_json, "fields");
 
@@ -152,8 +145,8 @@ pub fn fetch_project_items(token: &str, project_id: &str) -> anyhow::Result<Vec<
                                             }
                                         }
                                     }
-                                    ... on ProjectV2ItemFieldDateValue {
-                                        date
+                                    ... on ProjectV2ItemFieldNumberValue {
+                                        number
                                         field {
                                             ... on ProjectV2FieldCommon {
                                                 name
@@ -161,9 +154,29 @@ pub fn fetch_project_items(token: &str, project_id: &str) -> anyhow::Result<Vec<
                                             }
                                         }
                                     }
+                                    ... on ProjectV2ItemFieldDateValue {
+                                        date
+                                        field {
+                                            ... on ProjectV2FieldCommon {
+                                                name
+                                                id
+                                            }
+
+                                        }
+                                    }
                                     ... on ProjectV2ItemFieldSingleSelectValue {
                                         name
                                         field {
+                                            ... on ProjectV2SingleSelectField {
+                                                id
+                                                name
+                                                options {
+                                                    id
+                                                    name
+                                                    color
+                                                    description
+                                                }
+                                            }
                                             ... on ProjectV2FieldCommon {
                                                 name
                                                 id
@@ -213,39 +226,91 @@ pub fn rip_data<'a>(value: &'a Value, path: &'a str) -> &'a Value {
     &value["data"]["node"][path]["nodes"]
 }
 
-/// Loads the user's credential, authorizing if it does not exist
-// TODO: cut this up for use with UI
-pub fn load_id() -> github_device_flow::Credential {
-    if let Ok(content) = fs::read_to_string("./access_token") {
-        if let Ok(cred) = serde_json::from_str(&content) {
-            return cred;
+pub fn update_item_number(
+    token: &str,
+    project_id: &str,
+    item_id: &str,
+    field_id: &str,
+    new_number: f32,
+) -> anyhow::Result<ItemMutation> {
+    let client = reqwest::Client::new();
+
+    let query = r#"mutation {
+        updateProjectV2ItemFieldValue(
+            input: {
+                projectId: "PROJECT_ID"
+                itemId: "ITEM_ID"
+                fieldId: "FIELD_ID"
+                value: {
+                    number: NEW_TEXT
+                }
+            }
+        ) {
+            projectV2Item {
+                id
+            }
         }
-    }
+    }"#;
 
-    let cred = authorize(
-        String::from("c9dd703e0babd1c77c16"),
-        None,
-        Some(String::from("project,user:email")),
-    )
-    .expect("Failure loading credential");
+    let query = query
+        .replace("PROJECT_ID", project_id)
+        .replace("ITEM_ID", item_id)
+        .replace("FIELD_ID", field_id)
+        .replace("NEW_TEXT", &new_number.to_string());
 
-    let _ = fs::write(
-        "./access_token",
-        serde_json::to_string(&cred).expect("Failed to serialize"),
-    );
+    let response = send_query_request(token, &query)?;
+    let response_json = response.json::<Value>()?;
 
-    cred
+    let mutation = &response_json["data"]["updateProjectV2ItemFieldValue"]["projectV2Item"];
+
+    Ok(serde_json::from_value(mutation.clone())?)
 }
 
-pub fn update_item_field(
+pub fn update_item_date(
+    token: &str,
+    project_id: &str,
+    item_id: &str,
+    field_id: &str,
+    new_date: &str,
+) -> anyhow::Result<ItemMutation> {
+    let query = r#"mutation {
+        updateProjectV2ItemFieldValue(
+            input: {
+                projectId: "PROJECT_ID"
+                itemId: "ITEM_ID"
+                fieldId: "FIELD_ID"
+                value: {
+                    date: "NEW_TEXT"
+                }
+            }
+        ) {
+            projectV2Item {
+                id
+            }
+        }
+    }"#;
+
+    let query = query
+        .replace("PROJECT_ID", project_id)
+        .replace("ITEM_ID", item_id)
+        .replace("FIELD_ID", field_id)
+        .replace("NEW_TEXT", new_date);
+
+    let response = send_query_request(token, &query)?;
+    let response_json = response.json::<Value>()?;
+
+    let mutation = &response_json["data"]["updateProjectV2ItemFieldValue"]["projectV2Item"];
+
+    Ok(serde_json::from_value(mutation.clone())?)
+}
+
+pub fn update_item_text(
     token: &str,
     project_id: &str,
     item_id: &str,
     field_id: &str,
     new_text: &str,
 ) -> anyhow::Result<ItemMutation> {
-    let client = reqwest::Client::new();
-
     let query = r#"mutation {
         updateProjectV2ItemFieldValue(
             input: {
@@ -268,6 +333,46 @@ pub fn update_item_field(
         .replace("ITEM_ID", item_id)
         .replace("FIELD_ID", field_id)
         .replace("NEW_TEXT", new_text);
+
+    let response = send_query_request(token, &query)?;
+    let response_json = response.json::<Value>()?;
+
+    panic!("{:?}", response_json);
+
+    let mutation = &response_json["data"]["updateProjectV2ItemFieldValue"]["projectV2Item"];
+
+    Ok(serde_json::from_value(mutation.clone())?)
+}
+
+pub fn update_item_option(
+    token: &str,
+    project_id: &str,
+    item_id: &str,
+    field_id: &str,
+    option_id: &str,
+) -> anyhow::Result<ItemMutation> {
+    let query = r#"mutation {
+        updateProjectV2ItemFieldValue(
+            input: {
+                projectId: "PROJECT_ID" 
+                itemId: "ITEM_ID" 
+                fieldId: "FIELD_ID" 
+                value: { 
+                    singleSelectOptionId: "OPTION_ID" 
+                }
+            }
+            ) { 
+            projectV2Item {
+                id 
+            }
+        }
+    }"#;
+
+    let query = query
+        .replace("PROJECT_ID", project_id)
+        .replace("ITEM_ID", item_id)
+        .replace("FIELD_ID", field_id)
+        .replace("OPTION_ID", option_id);
 
     let response = send_query_request(token, &query)?;
     let response_json = response.json::<Value>()?;

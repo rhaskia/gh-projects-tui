@@ -1,57 +1,125 @@
-// TODO: fix on release
-#![allow(dead_code)]
-#![allow(unused_assignments)]
-#![allow(unused_attributes)]
-#![allow(unused_imports)]
-#![allow(unused_macros)]
-#![allow(unused_mut)]
-#![allow(unused_variables)]
-
 use crate::app::{insert_mode_keys, normal_mode_keys, App, InputMode};
-use crate::github::load_id;
 use crate::project::{Field, Item, ProjectV2ItemField};
 use std::rc::Rc;
 
-use anyhow::anyhow;
+use ::time::{Date, Month};
+
 use crossterm::{
     event::{self, KeyEventKind},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
+use github_device_flow::{Credential, DeviceFlow, DeviceFlowError};
+use ratatui::widgets::calendar::{DateStyler, CalendarEventStore};
 use ratatui::{prelude::*, widgets::*};
-use serde_json::Value;
-use std::cmp;
-use std::io::{stdout, Result};
+use std::io::stdout;
+use std::result::Result;
+use std::{cmp, fs, thread, time, vec};
 
-pub fn start_app(mut app: App) -> anyhow::Result<App> {
-    // get id
-    app.id = Some(load_id());
+type CTerminal = Terminal<CrosstermBackend<std::io::Stdout>>;
 
-    // Load user info and load it into the App
-    let err = app.reload_info()?;
+pub fn disable_terminal() -> anyhow::Result<()> {
+    stdout().execute(LeaveAlternateScreen)?;
+    disable_raw_mode()?;
 
-    println!("{:?}, \n{:?}", err, app.user_info);
-
-    // Actual UI once loaded
-    let app = draw(app)?;
-
-    println!("something went wrong ):");
-
-    Ok(app)
+    Ok(())
 }
 
-pub(crate) fn draw(mut app: App) -> anyhow::Result<App> {
+pub fn draw_app(mut app: App) -> anyhow::Result<()> {
     stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     terminal.clear()?;
 
+    // Auth and load info
+    let cred = draw_auth(&mut terminal)?;
+
+    let _ = fs::write(
+        "./access_token",
+        serde_json::to_string(&cred).expect("Failed to serialize"),
+    );
+
+    app.id = Some(cred);
+    app.reload_info()?;
+
+    // Actual UI once loaded
+    draw_projects_editor(&mut app, &mut terminal)?;
+
+    //disable_terminal()?;
+
+    Ok(())
+}
+
+pub fn draw_auth(terminal: &mut CTerminal) -> Result<Credential, DeviceFlowError> {
+    if let Ok(content) = fs::read_to_string("./access_token") {
+        if let Ok(cred) = serde_json::from_str(&content) {
+            return Ok(cred);
+        }
+    }
+
+    let client_id = include_str!("client_id");
+    let scope = Some("project,user");
+    let host = Some("github.com");
+
+    let mut flow = DeviceFlow::start(client_id, host, scope)?;
+
+    terminal
+        .draw(|frame| {
+            let layout = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(vec![
+                    Constraint::Percentage(40),
+                    Constraint::Min(4),
+                    Constraint::Percentage(40),
+                ])
+                .split(frame.size());
+
+            let text = format!(
+                "Please visit https://github.com/login/device \nAnd paste in the code {}",
+                flow.user_code.as_ref().unwrap()
+            );
+
+            frame.render_widget(
+                Paragraph::new(text).block(Block::default().borders(Borders::ALL)),
+                layout[1],
+            );
+        })
+        .expect("Auth rendering failed");
+
+    //thread::sleep(time::Duration::new(1, 0));
+
+    flow.poll(20)
+}
+
+// pub fn draw_error(, error: anyhow::Error) -> anyhow::Result<()> {
+//     let err = format!("{:#?}", error);
+//
+//     terminal.draw(|frame| {
+//         let layout = Layout::default()
+//             .direction(Direction::Vertical)
+//             .constraints(vec![
+//                 Constraint::Min(0),
+//                 Constraint::Max(5),
+//                 Constraint::Min(0),
+//             ])
+//             .split(frame.size());
+//
+//         frame.render_widget(Paragraph::new(err), layout[1]);
+//     })?;
+//
+//     Ok(())
+// }
+
+pub(crate) fn draw_projects_editor(
+    mut app: &mut App,
+    terminal: &mut CTerminal,
+) -> anyhow::Result<()> {
     //let rows = get_rows(&app.items, &app.()fields);
-    let mut n_widths = get_widths(&app, &app.info()?.fields, &app.info()?.items);
-    let mut widths = constrained_widths(&n_widths);
-    let mut headers = get_headers(&app.info()?.fields, &n_widths);
+    let mut n_widths;
+    let mut widths;
+    let mut headers;
     let mut offset = 0;
-    
+
     loop {
         n_widths = get_widths(&app, &app.info()?.fields, &app.info()?.items);
         widths = constrained_widths(&n_widths);
@@ -100,7 +168,7 @@ pub(crate) fn draw(mut app: App) -> anyhow::Result<App> {
                 layout[1],
             );
 
-            let mut scrolled = layout[1].clone();
+            let scrolled = layout[1].clone();
 
             // Tabs Drawing
             frame.render_widget(
@@ -128,16 +196,6 @@ pub(crate) fn draw(mut app: App) -> anyhow::Result<App> {
                 );
             }
 
-            // Wrapped Items
-            // for i in 0..offset {
-            //     frame.render_stateful_widget(
-            //         draw_list(&app.items, &app.fields, i)
-            //             .highlight_style(Style::not_reversed(Default::default())),
-            //         lists_layout[app.fields.len() - offset + i],
-            //         &mut list_state.clone(),
-            //     );
-            // }
-
             let cursor_pos = layout[1].height.min(app.item_state as u16 + 3);
             frame.render_widget(Paragraph::new(">"), Rect::new(0, cursor_pos, 1, 1));
 
@@ -159,7 +217,7 @@ pub(crate) fn draw(mut app: App) -> anyhow::Result<App> {
             if let event::Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
                     match &app.menu_state {
-                        InputMode::Normal => normal_mode_keys(key, &mut app),
+                        InputMode::Normal => normal_mode_keys(key, &mut app)?,
                         _ => insert_mode_keys(key, &mut app)?,
                     };
                 }
@@ -167,13 +225,9 @@ pub(crate) fn draw(mut app: App) -> anyhow::Result<App> {
         }
 
         if app.exit {
-            break;
+            return Ok(());
         }
     }
-
-    stdout().execute(LeaveAlternateScreen)?;
-    disable_raw_mode()?;
-    Ok(app)
 }
 
 fn draw_editor(
@@ -187,7 +241,7 @@ fn draw_editor(
     use ProjectV2ItemField::*;
     match app.get_field_at(app.item_state, app.field_state)? {
         // Pure Text
-        ProjectV2ItemField::TextValue { text, field } => {
+        TextValue { text: _, field } | NumberValue { number: _, field } => {
             position.y = position.y + (app.item_state as u16);
             position.height = 1;
 
@@ -203,10 +257,8 @@ fn draw_editor(
         }
 
         // With options
-        SingleSelectValue { name, field } => {
-            if let Field::ProjectV2SingleSelectField(field) =
-                &app.info()?.fields[app.field_state]
-            {
+        SingleSelectValue { name: _, field: _ } => {
+            if let Field::ProjectV2SingleSelectField(field) = &app.info()?.fields[app.field_state] {
                 position.y = position.y + (app.item_state as u16); //- (app.input.current_option as u16);
 
                 position.x -= 1;
@@ -215,7 +267,8 @@ fn draw_editor(
 
                 let block = Block::new().borders(Borders::LEFT | Borders::RIGHT);
 
-                let option_names: Vec<ListItem> = field.options
+                let option_names: Vec<ListItem> = field
+                    .options
                     .iter()
                     .map(|n| ListItem::new(n.name.clone()))
                     .collect();
@@ -232,14 +285,32 @@ fn draw_editor(
             }
         }
 
-        // Number
-        NumberValue { number, field } => {},
-
         //Whatever
-        IterationValue { duration, title, field } => {},
+        IterationValue {
+            duration,
+            title,
+            field,
+        } => {}
 
         // Date, calendar widget?
-        DateValue { date, field } => {}
+        DateValue { date, field } => {
+            let mut events = CalendarEventStore::default();
+            events.add(app.input.current_date.unwrap(), Style::default().on_red());
+
+            let calendar_widget = calendar::Monthly::new(app.input.current_date.unwrap(), events)
+                .show_month_header(Style::default())
+                .show_weekdays_header(Style::new().italic())
+                .show_surrounding(Style::new().gray())
+                .block(Block::new().borders(Borders::all())); 
+
+            position.height = 10;
+            position.width = 24;
+            position.x -= cmp::min(position.x, 6);
+            position.y = position.y + (app.item_state as u16); //- (app.input.current_option as u16);
+            frame.render_widget(Clear, position);
+
+            frame.render_widget(calendar_widget, position);
+        }
 
         // Ignore
         Empty(v) => {
@@ -296,8 +367,8 @@ fn draw_list<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> 
 
 fn get_info_text(app: &App, items: &Vec<Item>, fields: &Vec<Field>) -> String {
     format!(
-        "{}/{:?}, {}: {:?}",
-        app.field_state,
+        "{:?}/{:?}, {}: {:?}",
+        fields[app.field_state],
         app.item_state,
         app.input.current_input,
         items[app.item_state]
@@ -309,23 +380,10 @@ fn get_info_text(app: &App, items: &Vec<Item>, fields: &Vec<Field>) -> String {
 fn get_column<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> Vec<ListItem<'a>> {
     items
         .iter()
-        .map(|item| ListItem::new(item.field_values.name_from_field(fields[index].get_name())))
-        .collect()
-}
-
-fn get_rows<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>) -> Vec<Row<'a>> {
-    items
-        .iter()
         .map(|item| {
-            let cells = fields
-                .iter()
-                .map(move |f| {
-                    item.field_values
-                        .name_from_field(&*f.get_name().to_ascii_lowercase())
-                })
-                .collect::<Vec<&str>>();
-
-            Row::new(cells).height(1).bottom_margin(0)
+            let item = item.field_values.get_from_field(fields[index].get_name()); 
+            ListItem::new(item.value())
+            .style(item.style())
         })
         .collect()
 }

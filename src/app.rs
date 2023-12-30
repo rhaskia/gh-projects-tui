@@ -9,11 +9,14 @@
 
 use crate::github;
 use crate::project::*;
+use ::time::{ext::NumericalDuration, Date};
 use anyhow::anyhow;
 use crossterm::event::{KeyCode, KeyEvent};
 use github_device_flow::Credential;
 use serde_json::value::Value;
 use std::string::String;
+use time::format_description;
+use time::Duration;
 
 #[derive(PartialEq, Debug)]
 pub enum InputMode {
@@ -41,6 +44,7 @@ pub struct InputApp {
     pub cursor_pos: u16,
     pub current_options: Option<Vec<FieldOption>>,
     pub current_option: usize,
+    pub current_date: Option<Date>,
 }
 
 #[derive(Debug)]
@@ -52,7 +56,7 @@ pub struct UserInfo {
 }
 
 impl App {
-    pub fn setup() -> Self {
+    pub fn new() -> Self {
         App {
             project_state: 0,
             item_state: 0,
@@ -69,6 +73,7 @@ impl App {
                 cursor_pos: 0,
                 current_options: None,
                 current_option: 0,
+                current_date: None,
             },
         }
     }
@@ -154,17 +159,33 @@ impl App {
         }
     }
 
-    pub fn begin_editing(&mut self) {
+    pub fn begin_editing(&mut self) -> anyhow::Result<()> {
         self.menu_state = InputMode::Input;
 
         if let Some(info) = &self.user_info {
             let field_value = info.items[self.item_state]
                 .field_values
-                .name_from_field(&info.fields[self.field_state].get_name());
+                .get_from_field(&info.fields[self.field_state].get_name());
 
-            self.input.current_input = field_value.to_string();
+            self.input.current_input = field_value.value().to_string();
             self.input.cursor_pos = self.input.current_input.len() as u16;
+
+            if let Field::ProjectV2SingleSelectField(field) = &info.fields[self.field_state] {
+                self.input.current_options = Some(field.options.clone());
+                self.input.current_option = field
+                    .options
+                    .iter()
+                    .position(|x| x.name == field_value.value())
+                    .unwrap();
+            }
+
+            if let ProjectV2ItemField::DateValue { date, field } = field_value {
+                let format = format_description::parse("[year]-[month]-[day]")?;
+                self.input.current_date = Some(Date::parse(date, &format)?);
+            }
         }
+
+        Ok(())
     }
 
     pub fn backspace(&mut self) {
@@ -197,22 +218,45 @@ impl App {
         }
     }
 
-    pub fn save_field(&mut self, s: String) -> anyhow::Result<()> {
+    pub fn save_field(&mut self) -> anyhow::Result<()> {
         if let Some(app_info) = &self.user_info {
+            use ProjectV2ItemField::*;
+
             match self.get_field_at(self.item_state, self.field_state)? {
-                ProjectV2ItemField::Empty(v) => {}
-                ProjectV2ItemField::TextValue { text, field } => {}
-                ProjectV2ItemField::DateValue { date, field } => {}
-                ProjectV2ItemField::SingleSelectValue { name, field } => {}
-                ProjectV2ItemField::NumberValue { number, field } => {}
-                ProjectV2ItemField::IterationValue {
+                Empty(v) => {}
+                TextValue { text, field } => {
+                    self.save_field_text()?;
+                }
+                DateValue { date, field } => {
+                    self.save_field_date()?;
+                }
+                SingleSelectValue { name, field } => {
+                    self.save_field_option()?;
+                }
+                NumberValue { number, field } => {
+                    self.save_field_number()?;
+                }
+                IterationValue {
                     duration,
                     title,
                     field,
                 } => {}
             };
+        }
 
-            github::update_item_field(
+        Ok(())
+    }
+
+    pub fn save_field_option(&mut self) -> anyhow::Result<()> {
+        if let Some(app_info) = &self.user_info {
+            let current_option = &self
+                .input
+                .current_options
+                .as_ref()
+                .ok_or_else(|| anyhow!("No options found"))?[self.input.current_option]
+                .clone();
+
+            let mutation = github::update_item_option(
                 &self
                     .id
                     .clone()
@@ -221,28 +265,100 @@ impl App {
                 &app_info.projects[self.project_state].id,
                 &app_info.items[self.item_state].id,
                 app_info.fields[self.field_state].get_id(),
-                &s,
+                &current_option.id,
             )?;
-            self.reload_info()?;
+
+            return self.set_field_at(self.item_state, self.field_state, &current_option.name);
         }
 
         Ok(())
     }
 
-    pub fn set_string(&mut self) -> Result<(), anyhow::Error> {
-        self.save_field(self.input.current_input.clone())
-    }
-
-    pub fn set_option(&mut self) {
-        if let Some(ref options) = self.input.current_options {
-            self.save_field(options[self.input.current_option].name.clone());
-        }
-    }
-
-    pub fn set_field_at(&mut self, item: usize, field: usize, input: String) {
+    pub fn save_field_number(&mut self) -> anyhow::Result<()> {
         if let Some(app_info) = &self.user_info {
-            self.reload_info();
+            let mutation = github::update_item_number(
+                &self
+                    .id
+                    .clone()
+                    .ok_or_else(|| anyhow!("No Credential found"))?
+                    .token,
+                &app_info.projects[self.project_state].id,
+                &app_info.items[self.item_state].id,
+                app_info.fields[self.field_state].get_id(),
+                self.input.current_input.parse()?,
+            )?;
+
+            return self.set_field_at(
+                self.item_state,
+                self.field_state,
+                &self.input.current_input.clone(),
+            );
         }
+
+        Ok(())
+    }
+
+    pub fn save_field_date(&mut self) -> anyhow::Result<()> {
+        if let Some(app_info) = &self.user_info {
+            if let Some(date) = self.input.current_date {
+                let format = format_description::parse("[year]-[month]-[day]")?;
+                let format_date = date.format(&format)?;
+
+                let mutation = github::update_item_date(
+                    &self
+                        .id
+                        .clone()
+                        .ok_or_else(|| anyhow!("No Credential found"))?
+                        .token,
+                    &app_info.projects[self.project_state].id,
+                    &app_info.items[self.item_state].id,
+                    app_info.fields[self.field_state].get_id(),
+                    &self.input.current_input,
+                )?;
+
+                return self.set_field_at(
+                    self.item_state,
+                    self.field_state,
+                    &format_date,
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn save_field_text(&mut self) -> anyhow::Result<()> {
+        if let Some(app_info) = &self.user_info {
+            let mutation = github::update_item_text(
+                &self
+                    .id
+                    .clone()
+                    .ok_or_else(|| anyhow!("No Credential found"))?
+                    .token,
+                &app_info.projects[self.project_state].id,
+                &app_info.items[self.item_state].id,
+                app_info.fields[self.field_state].get_id(),
+                &self.input.current_input,
+            )?;
+
+            return self.set_field_at(
+                self.item_state,
+                self.field_state,
+                &self.input.current_input.clone(),
+            );
+        }
+
+        Ok(())
+    }
+
+    pub fn set_field_at(&mut self, item: usize, field: usize, s: &str) -> anyhow::Result<()> {
+        let info = self.info()?;
+        let index = info.fields[field].get_name().to_string();
+        let mut_info = self.mut_info()?;
+
+        mut_info.items[item].field_values.set_value(&index, s);
+
+        Ok(())
     }
 
     pub fn get_field_at(&self, item: usize, field: usize) -> anyhow::Result<&ProjectV2ItemField> {
@@ -255,73 +371,155 @@ impl App {
             anyhow::bail!("No app info")
         }
     }
+
+    pub fn shift_date(&mut self, d: i64) {
+        if let Some(date) = &self.input.current_date {
+            if let Some(new_date) = date.checked_add(Duration::days(d)) {
+                self.input.current_date = Some(new_date);
+            }
+        }
+    }
+
+    pub fn shift_month_forward(&mut self) {
+        if let Some(date) = &self.input.current_date {
+            if let Ok(new_date) = date.replace_month(date.month().next()) {
+                self.input.current_date = Some(new_date);
+            }
+        }
+    }
+
+    pub fn shift_month_back(&mut self) {
+        if let Some(date) = &self.input.current_date {
+            if let Ok(new_date) = date.replace_month(date.month().previous()) {
+                self.input.current_date = Some(new_date);
+            }
+        }
+    }
+
+    pub fn shift_year_forward(&mut self) {
+        if let Some(date) = &self.input.current_date {
+            if let Ok(new_date) = date.replace_year(date.year() + 1) {
+                self.input.current_date = Some(new_date);
+            }
+        }
+    }
+
+    pub fn shift_year_back(&mut self) {
+        if let Some(date) = &self.input.current_date {
+            if let Ok(new_date) = date.replace_year(date.year() - 1) {
+                self.input.current_date = Some(new_date);
+            }
+        }
+    }
 }
 
 pub fn insert_mode_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<()> {
     match key.code {
         KeyCode::Esc => {
             app.menu_state = InputMode::Normal;
+            app.input.current_input = String::new();
         }
         _ => {}
     }
 
     if let Some(app_info) = &app.user_info {
-        if let Field::ProjectV2SingleSelectField(field) = &app_info.fields[app.field_state] {
-            match key.code {
+        use ProjectV2ItemField::*;
+
+        match app.get_field_at(app.item_state, app.field_state)? {
+            // Single select editing
+            SingleSelectValue { name, field } => match key.code {
                 KeyCode::Char('j') | KeyCode::Down => app.shift_option_down(),
                 KeyCode::Char('k') | KeyCode::Up => app.shift_option_up(),
 
                 KeyCode::Enter => {
-                    app.set_option();
+                    app.save_field()?;
                     app.menu_state = InputMode::Normal;
+                    app.input.current_input = String::new();
                 }
 
                 _ => {}
-            }
-        } else {
-            match key.code {
+            },
+
+            // Text editing
+            TextValue { text, field } => match key.code {
                 KeyCode::Char(a) => app.insert_char(a),
                 KeyCode::Backspace => app.backspace(),
 
                 KeyCode::Enter => {
-                    app.set_string()?;
-                    app.menu_state = InputMode::Normal
+                    app.save_field()?;
+                    app.menu_state = InputMode::Normal;
+                    app.input.current_input = String::new();
                 }
 
                 KeyCode::Left => app.cursor_left(),
                 KeyCode::Right => app.cursor_right(),
 
                 _ => {}
-            }
+            },
+
+            // Date editing, uses calendar widget
+            DateValue { date, field } => match key.code {
+                KeyCode::Left | KeyCode::Char('h') => app.shift_date(1),
+                KeyCode::Right | KeyCode::Char('l') => app.shift_date(-1),
+                KeyCode::Up | KeyCode::Char('k') => app.shift_date(-7),
+                KeyCode::Down | KeyCode::Char('j') => app.shift_date(7),
+
+                KeyCode::Char('J') => app.shift_month_forward(),
+                KeyCode::Char('K') => app.shift_month_back(),
+
+                KeyCode::Char('L') => app.shift_year_forward(),
+                KeyCode::Char('H') => app.shift_year_back(),
+
+                KeyCode::Enter => {
+                    app.save_field()?;
+                    app.menu_state = InputMode::Normal;
+                }
+
+                _ => {}
+            },
+
+            NumberValue { number, field } => match key.code {
+                KeyCode::Char(a) => {
+                    if a.is_numeric() {
+                        app.insert_char(a);
+                    }
+                }
+                KeyCode::Backspace => app.backspace(),
+
+                KeyCode::Enter => {
+                    app.save_field()?;
+                    app.menu_state = InputMode::Normal;
+                    app.input.current_input = String::new();
+                }
+
+                KeyCode::Left => app.cursor_left(),
+                KeyCode::Right => app.cursor_right(),
+
+                _ => {}
+            },
+            IterationValue {
+                duration,
+                title,
+                field,
+            } => todo!(),
+            Empty(_) => todo!(),
         }
     }
 
     Ok(())
 }
 
-pub fn normal_mode_keys(key: KeyEvent, app: &mut App) {
-    match key.code {
-        KeyCode::Char('q') => {
-            app.exit = true;
-        }
+pub fn normal_mode_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<()> {
+    Ok(match key.code {
+        KeyCode::Char('q') => app.exit = true,
 
-        KeyCode::Char('j') | KeyCode::Down => {
-            app.next();
-        }
-        KeyCode::Char('k') | KeyCode::Up => {
-            app.previous();
-        }
-        KeyCode::Char('h') | KeyCode::Left => {
-            app.left();
-        }
-        KeyCode::Char('l') | KeyCode::Right => {
-            app.right();
-        }
+        KeyCode::Char('j') | KeyCode::Down => app.next(),
+        KeyCode::Char('k') | KeyCode::Up => app.previous(),
+        KeyCode::Char('h') | KeyCode::Left => app.left(),
+        KeyCode::Char('l') | KeyCode::Right => app.right(),
 
-        KeyCode::Char('i') => {
-            app.begin_editing();
-        }
+        KeyCode::Char('i') => app.begin_editing()?,
 
         _ => {}
-    }
+    })
 }
