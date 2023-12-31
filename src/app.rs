@@ -1,12 +1,3 @@
-// TODO: fix on release
-#![allow(dead_code)]
-#![allow(unused_assignments)]
-#![allow(unused_attributes)]
-#![allow(unused_imports)]
-#![allow(unused_macros)]
-#![allow(unused_mut)]
-#![allow(unused_variables)]
-
 use crate::github;
 use crate::project::*;
 use ::time::{ext::NumericalDuration, Date};
@@ -163,9 +154,17 @@ impl App {
         self.menu_state = InputMode::Input;
 
         if let Some(info) = &self.user_info {
-            let field_value = info.items[self.item_state]
+            let mut field_value = info.items[self.item_state]
                 .field_values
                 .get_from_field(&info.fields[self.field_state].get_name());
+
+            // Empty item field 
+            if let ProjectV2ItemField::Empty(v) = field_value {
+                info.items[self.item_state].field_values.nodes.push(info.fields[self.field_state].default());
+                field_value = info.items[self.item_state]
+                    .field_values
+                    .get_from_field(&info.fields[self.field_state].get_name());
+            }
 
             self.input.current_input = field_value.value().to_string();
             self.input.cursor_pos = self.input.current_input.len() as u16;
@@ -179,7 +178,7 @@ impl App {
                     .unwrap();
             }
 
-            if let ProjectV2ItemField::DateValue { date, field } = field_value {
+            if let ProjectV2ItemField::DateValue { date, field: _ } = field_value {
                 let format = format_description::parse("[year]-[month]-[day]")?;
                 self.input.current_date = Some(Date::parse(date, &format)?);
             }

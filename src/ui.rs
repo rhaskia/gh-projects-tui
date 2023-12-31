@@ -2,6 +2,7 @@ use crate::app::{insert_mode_keys, normal_mode_keys, App, InputMode};
 use crate::project::{Field, Item, ProjectV2ItemField};
 use std::rc::Rc;
 
+use anyhow::anyhow;
 use ::time::{Date, Month};
 
 use crossterm::{
@@ -270,7 +271,8 @@ fn draw_editor(
                 let option_names: Vec<ListItem> = field
                     .options
                     .iter()
-                    .map(|n| ListItem::new(n.name.clone()))
+                    .map(|n| ListItem::new(n.name.clone())
+                            .style(n.style()))
                     .collect();
 
                 frame.render_widget(Clear, position);
@@ -314,7 +316,7 @@ fn draw_editor(
 
         // Ignore
         Empty(v) => {
-            panic!("empty");
+            panic!("Empty field uninitialized, please create github issue");
         }
     }
 

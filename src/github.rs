@@ -1,6 +1,3 @@
-const CLIENT_ID: &str = include_str!("client_id");
-const CLIENT_SECRET: &str = include_str!("client_secret");
-
 use anyhow::anyhow;
 use reqwest::blocking::Response;
 use serde::Serialize;
@@ -77,13 +74,10 @@ pub fn fetch_project_fields(token: &str, project_id: &str) -> Result<Vec<Field>,
                     ... on ProjectV2 {
                         fields(first: 50) {
                             nodes {
-                                ... on ProjectV2Field {
-                                    id
-                                    name
-                                }
                                 ... on ProjectV2IterationField {
                                     id
                                     name
+                                    dataType
                                     configuration {
                                         iterations {
                                             startDate
@@ -94,12 +88,18 @@ pub fn fetch_project_fields(token: &str, project_id: &str) -> Result<Vec<Field>,
                                 ... on ProjectV2SingleSelectField {
                                     id
                                     name
+                                    dataType
                                     options {
                                         id
                                         name
                                         color
                                         description
                                     }
+                                }
+                                ... on ProjectV2Field {
+                                    id
+                                    name
+                                    dataType
                                 }
                             }
                         }
@@ -118,8 +118,6 @@ pub fn fetch_project_fields(token: &str, project_id: &str) -> Result<Vec<Field>,
         .send()?;
 
     let response_json: Value = response.json()?;
-
-    //anyhow::bail!("{:?}", &response_json);
 
     let nodes = rip_data(&response_json, "fields");
 
@@ -156,6 +154,17 @@ pub fn fetch_project_items(token: &str, project_id: &str) -> anyhow::Result<Vec<
                                     }
                                     ... on ProjectV2ItemFieldDateValue {
                                         date
+                                        field {
+                                            ... on ProjectV2FieldCommon {
+                                                name
+                                                id
+                                            }
+
+                                        }
+                                    }
+                                    ... on ProjectV2ItemFieldIterationValue {
+                                        duration
+                                        title
                                         field {
                                             ... on ProjectV2FieldCommon {
                                                 name
@@ -217,6 +226,7 @@ pub fn fetch_project_items(token: &str, project_id: &str) -> anyhow::Result<Vec<
     let response = send_query_request(token, &query)?;
 
     let response_json = response.json::<Value>()?;
+
     let nodes = rip_data(&response_json, "items");
 
     Ok(serde_json::from_value(nodes.clone())?)
