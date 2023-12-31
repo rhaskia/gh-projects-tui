@@ -2,20 +2,17 @@ use crate::app::{insert_mode_keys, normal_mode_keys, App, InputMode};
 use crate::project::{Field, Item, ProjectV2ItemField};
 use std::rc::Rc;
 
-use anyhow::anyhow;
-use ::time::{Date, Month};
-
 use crossterm::{
     event::{self, KeyEventKind},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
 };
 use github_device_flow::{Credential, DeviceFlow, DeviceFlowError};
-use ratatui::widgets::calendar::{DateStyler, CalendarEventStore};
+use ratatui::widgets::calendar::CalendarEventStore;
 use ratatui::{prelude::*, widgets::*};
 use std::io::stdout;
 use std::result::Result;
-use std::{cmp, fs, thread, time, vec};
+use std::{cmp, fs, vec};
 
 type CTerminal = Terminal<CrosstermBackend<std::io::Stdout>>;
 
@@ -250,7 +247,7 @@ fn draw_editor(
 
             frame.render_widget(
                 Paragraph::new(app.input.current_input.clone())
-                    .style(Style::red(Default::default())),
+                    .style(Style::default().italic()),
                 position,
             );
 
@@ -316,7 +313,6 @@ fn draw_editor(
 
         // Ignore
         Empty(v) => {
-            panic!("Empty field uninitialized, please create github issue");
         }
     }
 

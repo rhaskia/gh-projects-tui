@@ -151,9 +151,10 @@ impl App {
     }
 
     pub fn begin_editing(&mut self) -> anyhow::Result<()> {
-        self.menu_state = InputMode::Input;
+        if let Some(info) = &mut self.user_info {
+            if !info.fields[self.field_state].is_editable() { return Ok(()); }
+            self.menu_state = InputMode::Input;
 
-        if let Some(info) = &self.user_info {
             let mut field_value = info.items[self.item_state]
                 .field_values
                 .get_from_field(&info.fields[self.field_state].get_name());

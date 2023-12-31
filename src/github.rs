@@ -139,6 +139,7 @@ pub fn fetch_project_items(token: &str, project_id: &str) -> anyhow::Result<Vec<
                                         field {
                                             ... on ProjectV2FieldCommon {
                                                 name
+                                                dataType
                                                 id
                                             }
                                         }
@@ -148,6 +149,7 @@ pub fn fetch_project_items(token: &str, project_id: &str) -> anyhow::Result<Vec<
                                         field {
                                             ... on ProjectV2FieldCommon {
                                                 name
+                                                dataType
                                                 id
                                             }
                                         }
@@ -157,6 +159,7 @@ pub fn fetch_project_items(token: &str, project_id: &str) -> anyhow::Result<Vec<
                                         field {
                                             ... on ProjectV2FieldCommon {
                                                 name
+                                                dataType
                                                 id
                                             }
 
@@ -168,6 +171,7 @@ pub fn fetch_project_items(token: &str, project_id: &str) -> anyhow::Result<Vec<
                                         field {
                                             ... on ProjectV2FieldCommon {
                                                 name
+                                                dataType
                                                 id
                                             }
 
@@ -179,6 +183,7 @@ pub fn fetch_project_items(token: &str, project_id: &str) -> anyhow::Result<Vec<
                                             ... on ProjectV2SingleSelectField {
                                                 id
                                                 name
+                                                dataType
                                                 options {
                                                     id
                                                     name
@@ -346,8 +351,6 @@ pub fn update_item_text(
 
     let response = send_query_request(token, &query)?;
     let response_json = response.json::<Value>()?;
-
-    panic!("{:?}", response_json);
 
     let mutation = &response_json["data"]["updateProjectV2ItemFieldValue"]["projectV2Item"];
 

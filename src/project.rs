@@ -21,9 +21,8 @@ pub struct ItemMutation {
     id: String  
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(untagged)]
-#[serde(rename_all(serialize = "snake_case"))]
 pub enum ProjectV2ItemField {
     TextValue {
         text: String,
@@ -77,7 +76,7 @@ impl ProjectV2ItemField {
                 Style::default()
             },
             NumberValue { number, field } => Style::default().light_blue(),
-            IterationValue { duration, title, field } => Style::default().light_green(), 
+            IterationValue { duration, title, field } => Style::default().bold(), 
             Empty(_) => Style::default(),
         }
     }
@@ -158,7 +157,7 @@ pub struct Project {
 }
 
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum Field {
     ProjectV2SingleSelectField(ProjectV2SingleSelectField),
@@ -195,16 +194,22 @@ impl Field {
         }
     }
 
+    pub fn is_editable(&self) -> bool {
+        vec!["DATE", "NUMBER", "TEXT", "TITLE", "SINGLE_SELECT"].contains(&self.get_type())
+    }
+
     pub fn default(&self) -> ProjectV2ItemField {
         use ProjectV2ItemField::*;
 
         match self {
-            Field::ProjectV2SingleSelectField(f) => SingleSelectValue { name: f.options[0].name, field: *self.clone() },
-            Field::ProjectV2IterationField(f) => IterationValue { duration: 7, title: String::from("Iteration 1"),  field: *self.clone() },
+            Field::ProjectV2SingleSelectField(f) => SingleSelectValue { name: f.options[0].name.clone(), field: self.clone() },
+            Field::ProjectV2IterationField(f) => IterationValue { duration: 7, title: String::from("Iteration 1"),  field: self.clone() },
             Field::ProjectV2Field(_) => match self.get_type() {
-                "DATE" => DateValue { date: String::from("1970-1-1"), field: *self.clone() },
-                "NUMBER" => NumberValue { number: 0.0, field: *self.clone() },
-                "TEXT" => TextValue { text: String::new(), field: *self.clone() },
+                "DATE" => {
+                    DateValue { date: String::from("1970-1-1"), field: self.clone() }
+                },
+                "NUMBER" => NumberValue { number: 0.0, field: self.clone() },
+                "TEXT" | "TITLE" => TextValue { text: String::new(), field: self.clone() },
                 _ => Empty(Value::Null)
             }
 
@@ -213,8 +218,8 @@ impl Field {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "snake_case"))]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all="camelCase")]
 pub struct ProjectV2Field {
     pub id: String,
     pub name: String,
@@ -222,13 +227,15 @@ pub struct ProjectV2Field {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all="camelCase")]
 pub struct ProjectV2FieldCommon {
     pub id: String,
     pub name: String,
+    pub data_type: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "snake_case"))]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all="camelCase")]
 pub struct ProjectV2IterationField {
     pub id: String,
     pub name: String,
@@ -236,8 +243,8 @@ pub struct ProjectV2IterationField {
     pub data_type: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "snake_case"))]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all="camelCase")]
 pub struct ProjectV2SingleSelectField {
     pub id: String,
     pub name: String,
@@ -245,14 +252,14 @@ pub struct ProjectV2SingleSelectField {
     pub data_type: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all(serialize = "snake_case"))]
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all="camelCase")]
 pub struct Iteration {
     pub start_date: String,
     pub id: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct IterationConfig {
     pub iterations: Vec<Iteration>,
 }
