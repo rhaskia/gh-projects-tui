@@ -4,7 +4,6 @@ use ::time::{ext::NumericalDuration, Date};
 use anyhow::anyhow;
 use crossterm::event::{KeyCode, KeyEvent};
 use github_device_flow::Credential;
-use serde_json::value::Value;
 use std::string::String;
 use time::format_description;
 use time::Duration;
@@ -26,16 +25,26 @@ pub(crate) struct App {
     pub user_info: Option<UserInfo>,
 
     pub id: Option<Credential>,
-    pub input: InputApp,
+    pub input: FieldBuffer,
 }
 
 #[derive(Debug)]
-pub struct InputApp {
-    pub current_input: String,
-    pub cursor_pos: u16,
-    pub current_options: Option<Vec<FieldOption>>,
-    pub current_option: usize,
-    pub current_date: Option<Date>,
+pub enum FieldBuffer {
+    None,
+    Text(String, u16),
+    SingleSelect(Vec<FieldOption>, u16),
+    Date(Date),
+    Iteration(Vec<Iteration>, u16),
+}
+
+impl FieldBuffer {
+    pub fn len(&self) -> usize {
+        match self {
+            FieldBuffer::Text(text, _) => text.len(),
+            FieldBuffer::Date(_) => 6,
+            _ => 0,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -59,13 +68,7 @@ impl App {
             user_info: None,
             id: None,
 
-            input: InputApp {
-                current_input: "".to_string(),
-                cursor_pos: 0,
-                current_options: None,
-                current_option: 0,
-                current_date: None,
-            },
+            input: FieldBuffer::None,
         }
     }
 
@@ -137,84 +140,118 @@ impl App {
     }
 
     pub fn shift_option_up(&mut self) {
-        self.input.current_option = match self.input.current_option {
-            0 => self.input.current_options.as_ref().unwrap().len() - 1,
-            _ => self.input.current_option - 1,
+        if let FieldBuffer::SingleSelect(options, ref mut index) = &mut self.input {
+            *index = match index {
+                0 => options.len() as u16,
+                _ => *index,
+            } - 1;
         };
     }
 
     pub fn shift_option_down(&mut self) {
-        self.input.current_option += 1;
-        if self.input.current_option >= self.input.current_options.as_ref().unwrap().len() {
-            self.input.current_option = 0;
-        }
+        if let FieldBuffer::SingleSelect(options, ref mut index) = &mut self.input {
+            *index += 1;
+            if *index >= options.len() as u16 {
+                *index = 0;
+            }
+        };
     }
 
     pub fn begin_editing(&mut self) -> anyhow::Result<()> {
         if let Some(info) = &mut self.user_info {
-            if !info.fields[self.field_state].is_editable() { return Ok(()); }
+            if !info.fields[self.field_state].is_editable() {
+                return Ok(());
+            }
             self.menu_state = InputMode::Input;
 
             let mut field_value = info.items[self.item_state]
                 .field_values
                 .get_from_field(&info.fields[self.field_state].get_name());
 
-            // Empty item field 
+            // Empty item field
             if let ProjectV2ItemField::Empty(v) = field_value {
-                info.items[self.item_state].field_values.nodes.push(info.fields[self.field_state].default());
+                info.items[self.item_state]
+                    .field_values
+                    .nodes
+                    .push(info.fields[self.field_state].default());
                 field_value = info.items[self.item_state]
                     .field_values
                     .get_from_field(&info.fields[self.field_state].get_name());
             }
 
-            self.input.current_input = field_value.value().to_string();
-            self.input.cursor_pos = self.input.current_input.len() as u16;
+            self.input = match field_value {
+                ProjectV2ItemField::SingleSelectValue { name, field } => FieldBuffer::SingleSelect(
+                    field.options.clone(),
+                    field
+                        .options
+                        .iter()
+                        .position(|x| x.name == field_value.value())
+                        .unwrap() as u16,
+                ),
 
-            if let Field::ProjectV2SingleSelectField(field) = &info.fields[self.field_state] {
-                self.input.current_options = Some(field.options.clone());
-                self.input.current_option = field
-                    .options
-                    .iter()
-                    .position(|x| x.name == field_value.value())
-                    .unwrap();
-            }
+                ProjectV2ItemField::IterationValue {
+                    duration,
+                    title,
+                    field,
+                } => FieldBuffer::Iteration(
+                    field.configuration.iterations.clone(),
+                    field
+                        .configuration
+                        .iterations
+                        .iter()
+                        .position(|x| x.title == field_value.value())
+                        .unwrap() as u16,
+                ),
 
-            if let ProjectV2ItemField::DateValue { date, field: _ } = field_value {
-                let format = format_description::parse("[year]-[month]-[day]")?;
-                self.input.current_date = Some(Date::parse(date, &format)?);
-            }
+                ProjectV2ItemField::TextValue { text, field } => {
+                    FieldBuffer::Text(text.clone(), text.len() as u16)
+                }
+
+                ProjectV2ItemField::DateValue { date, field } => {
+                    let format = format_description::parse("[year]-[month]-[day]")?;
+                    FieldBuffer::Date(Date::parse(date, &format)?)
+                }
+
+                _ => FieldBuffer::None,
+            };
+
+            if let ProjectV2ItemField::DateValue { date, field: _ } = field_value {}
         }
 
         Ok(())
     }
 
     pub fn backspace(&mut self) {
-        if self.input.cursor_pos == 0 {
-            return;
-        }
+        if let FieldBuffer::Text(ref mut text, ref mut cursor_pos) = self.input {
+            if *cursor_pos == 0 {
+                return;
+            }
 
-        self.input.cursor_pos -= 1;
-        self.input
-            .current_input
-            .remove(self.input.cursor_pos as usize);
+            *cursor_pos -= 1;
+            text.remove(*cursor_pos as usize);
+        }
     }
 
     pub fn insert_char(&mut self, c: char) {
-        self.input
-            .current_input
-            .insert(self.input.cursor_pos as usize, c);
-        self.input.cursor_pos += 1;
+        if let FieldBuffer::Text(ref mut text, ref mut cursor_pos) = &mut self.input {
+            text.insert(*cursor_pos as usize, c);
+            *cursor_pos += 1;
+        }
     }
 
     pub fn cursor_left(&mut self) {
-        if self.input.cursor_pos != 0 {
-            self.input.cursor_pos -= 1;
+        if let FieldBuffer::Text(_, ref mut cursor_pos) = &mut self.input {
+            if *cursor_pos != 0 {
+                *cursor_pos -= 1;
+            }
         }
     }
 
     pub fn cursor_right(&mut self) {
-        if self.input.cursor_pos != self.input.current_input.len() as u16 {
-            self.input.cursor_pos += 1;
+        if let FieldBuffer::Text(ref mut text, ref mut cursor_pos) = &mut self.input {
+            if *cursor_pos != text.len() as u16 {
+                *cursor_pos += 1;
+            }
         }
     }
 
@@ -249,26 +286,23 @@ impl App {
 
     pub fn save_field_option(&mut self) -> anyhow::Result<()> {
         if let Some(app_info) = &self.user_info {
-            let current_option = &self
-                .input
-                .current_options
-                .as_ref()
-                .ok_or_else(|| anyhow!("No options found"))?[self.input.current_option]
-                .clone();
+            if let FieldBuffer::SingleSelect(options, index) = &self.input {
+                let current_option = options[*index as usize].clone();
 
-            let mutation = github::update_item_option(
-                &self
-                    .id
-                    .clone()
-                    .ok_or_else(|| anyhow!("No Credential found"))?
-                    .token,
-                &app_info.projects[self.project_state].id,
-                &app_info.items[self.item_state].id,
-                app_info.fields[self.field_state].get_id(),
-                &current_option.id,
-            )?;
+                let mutation = github::update_item_option(
+                    &self
+                        .id
+                        .clone()
+                        .ok_or_else(|| anyhow!("No Credential found"))?
+                        .token,
+                    &app_info.projects[self.project_state].id,
+                    &app_info.items[self.item_state].id,
+                    app_info.fields[self.field_state].get_id(),
+                    &current_option.id,
+                )?;
 
-            return self.set_field_at(self.item_state, self.field_state, &current_option.name);
+                return self.set_field_at(self.item_state, self.field_state, &current_option.name);
+            }
         }
 
         Ok(())
@@ -276,23 +310,21 @@ impl App {
 
     pub fn save_field_number(&mut self) -> anyhow::Result<()> {
         if let Some(app_info) = &self.user_info {
-            let mutation = github::update_item_number(
-                &self
-                    .id
-                    .clone()
-                    .ok_or_else(|| anyhow!("No Credential found"))?
-                    .token,
-                &app_info.projects[self.project_state].id,
-                &app_info.items[self.item_state].id,
-                app_info.fields[self.field_state].get_id(),
-                self.input.current_input.parse()?,
-            )?;
+            if let FieldBuffer::Text(text, cursor) = &self.input {
+                let mutation = github::update_item_number(
+                    &self
+                        .id
+                        .clone()
+                        .ok_or_else(|| anyhow!("No Credential found"))?
+                        .token,
+                    &app_info.projects[self.project_state].id,
+                    &app_info.items[self.item_state].id,
+                    app_info.fields[self.field_state].get_id(),
+                    text.parse()?,
+                )?;
 
-            return self.set_field_at(
-                self.item_state,
-                self.field_state,
-                &self.input.current_input.clone(),
-            );
+                return self.set_field_at(self.item_state, self.field_state, &text.clone());
+            }
         }
 
         Ok(())
@@ -300,7 +332,7 @@ impl App {
 
     pub fn save_field_date(&mut self) -> anyhow::Result<()> {
         if let Some(app_info) = &self.user_info {
-            if let Some(date) = self.input.current_date {
+            if let FieldBuffer::Date(date) = self.input {
                 let format = format_description::parse("[year]-[month]-[day]")?;
                 let format_date = date.format(&format)?;
 
@@ -313,14 +345,10 @@ impl App {
                     &app_info.projects[self.project_state].id,
                     &app_info.items[self.item_state].id,
                     app_info.fields[self.field_state].get_id(),
-                    &self.input.current_input,
+                    &format_date,
                 )?;
 
-                return self.set_field_at(
-                    self.item_state,
-                    self.field_state,
-                    &format_date,
-                );
+                return self.set_field_at(self.item_state, self.field_state, &format_date);
             }
         }
 
@@ -329,23 +357,21 @@ impl App {
 
     pub fn save_field_text(&mut self) -> anyhow::Result<()> {
         if let Some(app_info) = &self.user_info {
-            let mutation = github::update_item_text(
-                &self
-                    .id
-                    .clone()
-                    .ok_or_else(|| anyhow!("No Credential found"))?
-                    .token,
-                &app_info.projects[self.project_state].id,
-                &app_info.items[self.item_state].id,
-                app_info.fields[self.field_state].get_id(),
-                &self.input.current_input,
-            )?;
+            if let FieldBuffer::Text(text, cursor_pos) = &self.input {
+                let mutation = github::update_item_text(
+                    &self
+                        .id
+                        .clone()
+                        .ok_or_else(|| anyhow!("No Credential found"))?
+                        .token,
+                    &app_info.projects[self.project_state].id,
+                    &app_info.items[self.item_state].id,
+                    app_info.fields[self.field_state].get_id(),
+                    &text,
+                )?;
 
-            return self.set_field_at(
-                self.item_state,
-                self.field_state,
-                &self.input.current_input.clone(),
-            );
+                return self.set_field_at(self.item_state, self.field_state, &text.clone());
+            }
         }
 
         Ok(())
@@ -373,41 +399,41 @@ impl App {
     }
 
     pub fn shift_date(&mut self, d: i64) {
-        if let Some(date) = &self.input.current_date {
+        if let FieldBuffer::Date(ref mut date) = &mut self.input {
             if let Some(new_date) = date.checked_add(Duration::days(d)) {
-                self.input.current_date = Some(new_date);
+                *date = new_date;
             }
         }
     }
 
     pub fn shift_month_forward(&mut self) {
-        if let Some(date) = &self.input.current_date {
+        if let FieldBuffer::Date(ref mut date) = &mut self.input {
             if let Ok(new_date) = date.replace_month(date.month().next()) {
-                self.input.current_date = Some(new_date);
+                *date = new_date;
             }
         }
     }
 
     pub fn shift_month_back(&mut self) {
-        if let Some(date) = &self.input.current_date {
+        if let FieldBuffer::Date(ref mut date) = &mut self.input {
             if let Ok(new_date) = date.replace_month(date.month().previous()) {
-                self.input.current_date = Some(new_date);
+                *date = new_date;
             }
         }
     }
 
     pub fn shift_year_forward(&mut self) {
-        if let Some(date) = &self.input.current_date {
+        if let FieldBuffer::Date(ref mut date) = &mut self.input {
             if let Ok(new_date) = date.replace_year(date.year() + 1) {
-                self.input.current_date = Some(new_date);
+                *date = new_date;
             }
         }
     }
 
     pub fn shift_year_back(&mut self) {
-        if let Some(date) = &self.input.current_date {
+        if let FieldBuffer::Date(ref mut date) = &mut self.input {
             if let Ok(new_date) = date.replace_year(date.year() - 1) {
-                self.input.current_date = Some(new_date);
+                *date = new_date;
             }
         }
     }
@@ -417,7 +443,7 @@ pub fn insert_mode_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<()> {
     match key.code {
         KeyCode::Esc => {
             app.menu_state = InputMode::Normal;
-            app.input.current_input = String::new();
+            app.input = FieldBuffer::None;
         }
         _ => {}
     }
@@ -434,7 +460,7 @@ pub fn insert_mode_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<()> {
                 KeyCode::Enter => {
                     app.save_field()?;
                     app.menu_state = InputMode::Normal;
-                    app.input.current_input = String::new();
+                    app.input = FieldBuffer::None;
                 }
 
                 _ => {}
@@ -448,7 +474,7 @@ pub fn insert_mode_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<()> {
                 KeyCode::Enter => {
                     app.save_field()?;
                     app.menu_state = InputMode::Normal;
-                    app.input.current_input = String::new();
+                    app.input = FieldBuffer::None;
                 }
 
                 KeyCode::Left => app.cursor_left(),
@@ -489,7 +515,7 @@ pub fn insert_mode_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<()> {
                 KeyCode::Enter => {
                     app.save_field()?;
                     app.menu_state = InputMode::Normal;
-                    app.input.current_input = String::new();
+                    app.input = FieldBuffer::None;
                 }
 
                 KeyCode::Left => app.cursor_left(),

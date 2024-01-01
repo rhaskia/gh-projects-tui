@@ -34,7 +34,7 @@ pub enum ProjectV2ItemField {
     },
     SingleSelectValue {
         name: String,
-        field: Field,
+        field: ProjectV2SingleSelectField,
     },
     NumberValue {
         number: f32,
@@ -43,7 +43,7 @@ pub enum ProjectV2ItemField {
     IterationValue {
         duration: u8,
         title: String,
-        field: Field,
+        field: ProjectV2IterationField,
     },
     Empty(Value), // Represents the empty field
 }
@@ -68,13 +68,9 @@ impl ProjectV2ItemField {
         match self {
             TextValue { text, field } => Style::default(),
             DateValue { date, field } => Style::default().bold(),
-            SingleSelectValue { name, field } => {
-                if let Field::ProjectV2SingleSelectField(f) = field {
-                    return f.options.iter().find(|v| &v.name == name).unwrap().style(); 
-                }
-
-                Style::default()
-            },
+            SingleSelectValue { name, field } => 
+                field.options.iter().find(|v| &v.name == name).unwrap().style() 
+            ,
             NumberValue { number, field } => Style::default().light_blue(),
             IterationValue { duration, title, field } => Style::default().bold(), 
             Empty(_) => Style::default(),
@@ -91,9 +87,9 @@ impl Nodes<ProjectV2ItemField> {
             Empty(v) => "",
             TextValue { text, field } => &field.get_name(), 
             DateValue { date, field } => &field.get_name(),
-            SingleSelectValue { name, field } => &field.get_name(),
+            SingleSelectValue { name, field } => &field.name,
             NumberValue { number, field } => &field.get_name(),
-            IterationValue { duration, title, field } => &field.get_name(),
+            IterationValue { duration, title, field } => &field.name,
         } == s).unwrap_or(&Empty(Value::Null))
     }
 
@@ -111,9 +107,9 @@ impl Nodes<ProjectV2ItemField> {
                 Empty(_) => false,
                 TextValue { text, field } => field.get_name() == index,
                 DateValue { date, field } => field.get_name() == index,
-                SingleSelectValue { name, field } => field.get_name() == index,
+                SingleSelectValue { name, field } => field.name == index,
                 NumberValue { number, field } => field.get_name() == index,
-                IterationValue { duration, title, field } => field.get_name() == index,
+                IterationValue { duration, title, field } => field.name == index,
             }) {
                 match item_field {
                     Empty(_) => {} // Handle Empty variant as needed,
@@ -195,15 +191,15 @@ impl Field {
     }
 
     pub fn is_editable(&self) -> bool {
-        vec!["DATE", "NUMBER", "TEXT", "TITLE", "SINGLE_SELECT"].contains(&self.get_type())
+        vec!["DATE", "NUMBER", "TEXT", "TITLE", "SINGLE_SELECT", "ITERATION"].contains(&self.get_type())
     }
 
     pub fn default(&self) -> ProjectV2ItemField {
         use ProjectV2ItemField::*;
 
         match self {
-            Field::ProjectV2SingleSelectField(f) => SingleSelectValue { name: f.options[0].name.clone(), field: self.clone() },
-            Field::ProjectV2IterationField(f) => IterationValue { duration: 7, title: String::from("Iteration 1"),  field: self.clone() },
+            Field::ProjectV2SingleSelectField(f) => SingleSelectValue { name: f.options[0].name.clone(), field: f.clone() },
+            Field::ProjectV2IterationField(f) => IterationValue { duration: 7, title: String::from("Iteration 1"),  field: f.clone() },
             Field::ProjectV2Field(_) => match self.get_type() {
                 "DATE" => {
                     DateValue { date: String::from("1970-1-1"), field: self.clone() }
@@ -257,6 +253,7 @@ pub struct ProjectV2SingleSelectField {
 pub struct Iteration {
     pub start_date: String,
     pub id: String,
+    pub title: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

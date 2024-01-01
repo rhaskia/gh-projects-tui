@@ -1,4 +1,4 @@
-use crate::app::{insert_mode_keys, normal_mode_keys, App, InputMode};
+use crate::app::{insert_mode_keys, normal_mode_keys, App, FieldBuffer, InputMode};
 use crate::project::{Field, Item, ProjectV2ItemField};
 use std::rc::Rc;
 
@@ -23,7 +23,7 @@ pub fn disable_terminal() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn draw_app(mut app: App) -> anyhow::Result<()> {
+pub fn draw_app(mut app: App) -> anyhow::Result<App> {
     stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
@@ -45,7 +45,7 @@ pub fn draw_app(mut app: App) -> anyhow::Result<()> {
 
     //disable_terminal()?;
 
-    Ok(())
+    Ok(app)
 }
 
 pub fn draw_auth(terminal: &mut CTerminal) -> Result<Credential, DeviceFlowError> {
@@ -201,14 +201,7 @@ pub(crate) fn draw_projects_editor(
                 draw_editor(frame, &app, &lists_layout, offset);
             }
 
-            frame.render_widget(
-                Paragraph::new(get_info_text(
-                    &app,
-                    &app.info().unwrap().items,
-                    &app.info().unwrap().fields,
-                )),
-                layout[2],
-            );
+            frame.render_widget(guide(&app), layout[2]);
         })?;
 
         if event::poll(std::time::Duration::from_millis(16))? {
@@ -245,13 +238,14 @@ fn draw_editor(
 
             frame.render_widget(Clear, position);
 
-            frame.render_widget(
-                Paragraph::new(app.input.current_input.clone())
-                    .style(Style::default().italic()),
-                position,
-            );
+            if let FieldBuffer::Text(text, cursor_pos) = &app.input {
+                frame.render_widget(
+                    Paragraph::new(text.clone()).style(Style::default().italic()),
+                    position,
+                );
 
-            frame.set_cursor(position.x + app.input.cursor_pos, position.y);
+                frame.set_cursor(position.x + cursor_pos, position.y);
+            }
         }
 
         // With options
@@ -268,19 +262,20 @@ fn draw_editor(
                 let option_names: Vec<ListItem> = field
                     .options
                     .iter()
-                    .map(|n| ListItem::new(n.name.clone())
-                            .style(n.style()))
+                    .map(|n| ListItem::new(n.name.clone()).style(n.style()))
                     .collect();
 
-                frame.render_widget(Clear, position);
+                if let FieldBuffer::SingleSelect(options, index) = &app.input {
+                    frame.render_widget(Clear, position);
 
-                frame.render_stateful_widget(
-                    List::new(option_names)
-                        .block(block)
-                        .highlight_style(Style::new().reversed()),
-                    position,
-                    &mut state_wrapper(app.input.current_option),
-                );
+                    frame.render_stateful_widget(
+                        List::new(option_names)
+                            .block(block)
+                            .highlight_style(Style::new().reversed()),
+                        position,
+                        &mut state_wrapper(*index as usize),
+                    );
+                }
             }
         }
 
@@ -293,27 +288,28 @@ fn draw_editor(
 
         // Date, calendar widget?
         DateValue { date, field } => {
-            let mut events = CalendarEventStore::default();
-            events.add(app.input.current_date.unwrap(), Style::default().on_red());
+            if let FieldBuffer::Date(date) = app.input {
+                let mut events = CalendarEventStore::default();
+                events.add(date, Style::default().on_red());
 
-            let calendar_widget = calendar::Monthly::new(app.input.current_date.unwrap(), events)
-                .show_month_header(Style::default())
-                .show_weekdays_header(Style::new().italic())
-                .show_surrounding(Style::new().gray())
-                .block(Block::new().borders(Borders::all())); 
+                let calendar_widget = calendar::Monthly::new(date, events)
+                    .show_month_header(Style::default())
+                    .show_weekdays_header(Style::new().italic())
+                    .show_surrounding(Style::new().gray())
+                    .block(Block::new().borders(Borders::all()));
 
-            position.height = 10;
-            position.width = 24;
-            position.x -= cmp::min(position.x, 6);
-            position.y = position.y + (app.item_state as u16); //- (app.input.current_option as u16);
-            frame.render_widget(Clear, position);
+                position.height = 10;
+                position.width = 24;
+                position.x -= cmp::min(position.x, 6);
+                position.y = position.y + (app.item_state as u16); //- (app.input.current_option as u16);
+                frame.render_widget(Clear, position);
 
-            frame.render_widget(calendar_widget, position);
+                frame.render_widget(calendar_widget, position);
+            }
         }
 
         // Ignore
-        Empty(v) => {
-        }
+        Empty(v) => {}
     }
 
     Ok(())
@@ -363,25 +359,66 @@ fn draw_list<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> 
         .highlight_style(Style::new().reversed())
 }
 
-fn get_info_text(app: &App, items: &Vec<Item>, fields: &Vec<Field>) -> String {
-    format!(
-        "{:?}/{:?}, {}: {:?}",
-        fields[app.field_state],
-        app.item_state,
-        app.input.current_input,
-        items[app.item_state]
-            .field_values
-            .get_from_field(fields[app.field_state].get_name())
-    )
+fn guide<'a>(app: &App) -> Table<'a> {
+    let rows_raw = match app.menu_state {
+        InputMode::Input => insert_mode_guide(),
+        InputMode::Normal => normal_mode_guide(),
+    };
+
+    let rows = rows_raw.iter().map(|r| {
+        Row::new(
+            r.iter()
+                .map(|i| Line::from(vec![i.0.clone().bold(), Span::from(i.1.clone())])),
+        )
+    });
+
+    Table::new(rows)
+}
+
+fn insert_mode_guide() -> Vec<Vec<(String, String)>> {
+    vec![
+        vec![
+            (String::from("q"), String::from("quit")),
+            (String::from("i"), String::from("insert")),
+            (String::from("r"), String::from("add new")),
+            (String::from("h"), String::from("left")),
+            (String::from("l"), String::from("right")),
+        ],
+        vec![
+            (String::from("p"), String::from("switch project")),
+            (String::from("x"), String::from("hide field")),
+            (String::from("s"), String::from("sort by")),
+            (String::from("k"), String::from("up")),
+            (String::from("j"), String::from("down")),
+        ],
+    ]
+}
+
+fn normal_mode_guide() -> Vec<Vec<(String, String)>> {
+    vec![
+        vec![
+            (String::from("q"), String::from("quit")),
+            (String::from("i"), String::from("insert")),
+            (String::from("a"), String::from("add new")),
+            (String::from("h"), String::from("left")),
+            (String::from("l"), String::from("right")),
+        ],
+        vec![
+            (String::from("p"), String::from("switch project")),
+            (String::from("x"), String::from("hide field")),
+            (String::from("s"), String::from("sort by")),
+            (String::from("k"), String::from("up")),
+            (String::from("j"), String::from("down")),
+        ],
+    ]
 }
 
 fn get_column<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> Vec<ListItem<'a>> {
     items
         .iter()
         .map(|item| {
-            let item = item.field_values.get_from_field(fields[index].get_name()); 
-            ListItem::new(item.value())
-            .style(item.style())
+            let item = item.field_values.get_from_field(fields[index].get_name());
+            ListItem::new(item.value()).style(item.style())
         })
         .collect()
 }
@@ -426,7 +463,7 @@ fn get_width(app: &App, field: &Field, fields: &Vec<Field>, items: &Vec<Item>) -
     );
 
     if currently_editing {
-        cmp::max(max, app.input.current_input.len())
+        cmp::max(max, app.input.len())
     } else {
         max
     }

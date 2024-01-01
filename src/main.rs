@@ -11,6 +11,5 @@ fn main() {
     // Make sure the user's terminal doesn't break if
     // an error happens
     ui::disable_terminal(); 
-
-    println!("{:?}", t);
+    println!("{:#?}", t);
 }

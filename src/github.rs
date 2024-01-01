@@ -82,6 +82,7 @@ pub fn fetch_project_fields(token: &str, project_id: &str) -> Result<Vec<Field>,
                                         iterations {
                                             startDate
                                             id
+                                            title
                                         }
                                     }
                                 }
@@ -169,9 +170,20 @@ pub fn fetch_project_items(token: &str, project_id: &str) -> anyhow::Result<Vec<
                                         duration
                                         title
                                         field {
-                                            ... on ProjectV2FieldCommon {
+                                            ... on ProjectV2IterationField {
+                                                id
                                                 name
                                                 dataType
+                                                configuration {
+                                                    iterations {
+                                                        startDate
+                                                        id
+                                                        title
+                                                    }
+                                                }
+                                            }
+                                            ... on ProjectV2FieldCommon {
+                                                name
                                                 id
                                             }
 
