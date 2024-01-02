@@ -47,6 +47,7 @@ pub(crate) struct App {
     pub field_state: usize,
     pub menu_state: InputMode,
     pub exit: bool,
+    pub error_hook: anyhow::Result<()>,
 
     pub user_info: Option<UserInfo>,
 
@@ -90,6 +91,7 @@ impl App {
 
             menu_state: InputMode::Normal,
             exit: false,
+            error_hook: Ok(()),
 
             user_info: None,
             id: None,
@@ -214,11 +216,23 @@ impl App {
             if !info.fields[self.field_state].is_editable() {
                 return Ok(());
             }
+
             self.menu_state = InputMode::Input;
 
             let mut field_value = info.items[self.item_state]
                 .field_values
                 .get_from_field(&info.fields[self.field_state].get_name());
+
+            // Check item type
+            match info.items[self.item_state].content {
+                Some(Content::Issue { title: _, assignees: _ }) => {
+                   if field_value.get_type() == "TITLE" { return Err(anyhow!("Cannot edit issue title")); } 
+                },
+                Some(Content::PullRequest { title: _, assignees: _ }) => {
+                   if field_value.get_type() == "TITLE" { return Err(anyhow!("Cannot edit pull request title")); } 
+                },
+                _ => {}
+            }
 
             // Empty item field
             if let ProjectV2ItemField::Empty(_v) = field_value {

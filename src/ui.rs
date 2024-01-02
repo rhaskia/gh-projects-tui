@@ -5,7 +5,7 @@ use crate::app::{
 };
 use crate::project::{Field, Item, ProjectV2ItemField};
 use std::rc::Rc;
-use std::sync::{mpsc};
+use std::sync::mpsc;
 use std::thread;
 
 use crossterm::{
@@ -19,7 +19,7 @@ use ratatui::{prelude::*, widgets::*};
 use std::io::stdout;
 use std::result::Result;
 use std::{cmp, fs, vec};
-use time::{Instant};
+use time::Instant;
 
 type CTerminal = Terminal<CrosstermBackend<std::io::Stdout>>;
 
@@ -49,7 +49,7 @@ pub fn start_app(mut app: App) -> anyhow::Result<()> {
     app.reload_info()?;
 
     // Actual UI once loaded
-    draw_projects_editor(&mut app, &mut terminal)?;
+    draw_projects_editor(app, &mut terminal)?;
 
     Ok(())
 }
@@ -76,7 +76,7 @@ pub fn app_updater(
 }
 
 pub(crate) fn draw_projects_editor(
-    mut app: &mut App,
+    mut app: App,
     terminal: &mut CTerminal,
 ) -> anyhow::Result<()> {
     let mut n_widths = get_widths(&app, &app.info()?.fields, &app.info()?.items);
@@ -108,8 +108,8 @@ pub(crate) fn draw_projects_editor(
             let proj_id = app.config.project_state;
             let tx_clone = tx.clone();
 
-            thread::spawn(move || {
-                app_updater(token, proj_id, tx_clone);
+            thread::spawn(move || -> anyhow::Result<()> {
+                app_updater(token, proj_id, tx_clone)
             });
 
             last_refresh = Instant::now();
@@ -182,7 +182,7 @@ pub(crate) fn draw_projects_editor(
                 frame.render_stateful_widget(
                     draw_list(&app.info().unwrap().items, &app.info().unwrap().fields, i)
                         .highlight_style(if i == app.field_state {
-                            Style::reversed(Default::default())
+                           Style::default().reversed() 
                         } else {
                             Style::not_reversed(Default::default())
                         }),
@@ -197,13 +197,13 @@ pub(crate) fn draw_projects_editor(
 
             // Extra drawing
             match app.menu_state {
-                InputMode::Normal => {
-                    draw_editor(frame, &app, &lists_layout, offset);
+                InputMode::Input => {
+                    // Unwrap unwinds the closure hopefully
+                    draw_editor(frame, &app, &lists_layout, offset).unwrap();
                 }
                 InputMode::SwitchProject => {
-                    draw_project_list(&mut app, frame);
+                    draw_project_list(&mut app, frame).unwrap();
                 }
-
                 InputMode::LoadingProject => {
                     draw_info_window("Loading Project", lists_layout[1], frame);
                 }
@@ -229,6 +229,10 @@ pub(crate) fn draw_projects_editor(
 
         if app.exit {
             return Ok(());
+        }
+        
+        if let Err(err) = app.error_hook {
+            return Err(err);
         }
     }
 }

@@ -76,6 +76,19 @@ impl ProjectV2ItemField {
             Empty(_) => Style::default(),
         }
     }
+
+    pub fn get_type(&self) -> &str {
+        use ProjectV2ItemField::*;
+
+        match self {
+            SingleSelectValue { name: _, field } => &field.data_type,
+            DateValue { date: _, field } |
+            NumberValue { number: _, field } |
+            TextValue { text: _, field } => field.get_type(),
+            IterationValue { duration: _, title: _, field } => &field.data_type,
+            Empty(_) => "",
+        }
+    }
 }
 
 impl Nodes<ProjectV2ItemField> {

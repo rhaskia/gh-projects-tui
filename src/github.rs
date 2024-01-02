@@ -13,7 +13,7 @@ struct AccessTokenRequest {
     grant_type: String,
 }
 
-use serde_json::{from_value};
+use serde_json::from_value;
 
 pub fn send_query_request(token: &str, query: &str) -> anyhow::Result<Response> {
     let client = reqwest::blocking::Client::new();
@@ -354,6 +354,16 @@ pub fn update_item_text(
 
     let response = send_query_request(token, &query)?;
     let response_json = response.json::<Value>()?;
+    
+    panic!("{:?}", response_json);
+
+    if let Some(err) = response_json.get("errors") {
+       if let Some(errors) = err.as_array() {
+           if let Some(error) = errors[0].as_str() {
+               return Err(anyhow!(error.to_owned()));
+           }
+       }
+    }
 
     let mutation = &response_json["data"]["updateProjectV2ItemFieldValue"]["projectV2Item"];
 

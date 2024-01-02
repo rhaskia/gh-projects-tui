@@ -12,6 +12,9 @@ fn main() {
     
     // Make sure the user's terminal doesn't break if
     // an error happens
-    ui::disable_terminal(); 
-    println!("{:#?}", t);
+    ui::disable_terminal().unwrap();
+
+    if let Err(err) = t {
+        eprintln!("{:?}", err);
+    }
 }
