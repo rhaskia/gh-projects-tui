@@ -19,6 +19,8 @@ anyhow = "1.0.76"
 chrono = "0.4.31"
 time = { version = "0.3.31", features = ["parsing", "formatting"]}
 time-macros = { version = "0.2.0-alpha.1" }
+confy = "0.5.1"
+tokio = "1.35.1"
 
 [profile.dev]
 opt-level = 0

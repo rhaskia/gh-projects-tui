@@ -67,8 +67,7 @@ pub fn get_project_ids(token: &str, login: &str) -> Result<Vec<Project>, anyhow:
 
 /// Returns all fields that a project has
 pub fn fetch_project_fields(token: &str, project_id: &str) -> Result<Vec<Field>, anyhow::Error> {
-    let graphql_query = json!({
-        "query": r#"
+    let query = r#"
             query {
                 node(id: "PROJECT_ID") {
                     ... on ProjectV2 {
@@ -107,17 +106,10 @@ pub fn fetch_project_fields(token: &str, project_id: &str) -> Result<Vec<Field>,
                     }
                 }
             }
-        "#.replace("PROJECT_ID", project_id),
-    });
+        "#.replace("PROJECT_ID", project_id);
 
     let client = reqwest::blocking::Client::new();
-    let response = client
-        .post("https://api.github.com/graphql")
-        .header("Authorization", format!("Bearer {}", token))
-        .header("User-Agent", "Projects TUI")
-        .json(&graphql_query)
-        .send()?;
-
+    let response = send_query_request(&token, &query)?;
     let response_json: Value = response.json()?;
 
     let nodes = rip_data(&response_json, "fields");
@@ -241,7 +233,6 @@ pub fn fetch_project_items(token: &str, project_id: &str) -> anyhow::Result<Vec<
     .replace("PROJECT_ID", project_id);
 
     let response = send_query_request(token, &query)?;
-
     let response_json = response.json::<Value>()?;
 
     let nodes = rip_data(&response_json, "items");

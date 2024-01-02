@@ -1,22 +1,48 @@
 use crate::github;
 use crate::project::*;
-use ::time::{ext::NumericalDuration, Date};
-use anyhow::anyhow;
+use ::time::Date;
 use crossterm::event::{KeyCode, KeyEvent};
 use github_device_flow::Credential;
+use serde::{Deserialize, Serialize};
 use std::string::String;
 use time::format_description;
 use time::Duration;
+use anyhow::anyhow;
+use tokio::runtime::Runtime;
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum InputMode {
     Normal,
     Input,
+    SwitchProject,
+    AddItem,
+    LoadingProject,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Config {
+    pub project_state: usize,
+    pub field_ignore: Vec<FieldIgnore>,
+}
+
+impl ::std::default::Default for Config {
+    fn default() -> Config {
+        Config {
+            project_state: 0,
+            field_ignore: Vec::new(),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct FieldIgnore {
+    pub project_id: String,
+    pub ignore: Vec<String>,
 }
 
 #[derive(Debug)]
 pub(crate) struct App {
-    pub project_state: usize,
+    pub config: Config,
     pub item_state: usize,
     pub field_state: usize,
     pub menu_state: InputMode,
@@ -58,7 +84,7 @@ pub struct UserInfo {
 impl App {
     pub fn new() -> Self {
         App {
-            project_state: 0,
+            config: confy::load("projects-tui", "config").unwrap_or_else(|_| Config::default()),
             item_state: 0,
             field_state: 0,
 
@@ -72,22 +98,28 @@ impl App {
         }
     }
 
-    pub fn reload_info(&mut self) -> anyhow::Result<()> {
+    pub fn load_info(&self) -> anyhow::Result<UserInfo> {
         if let Some(cred) = &self.id {
             let user = github::get_user(&cred.token)?;
             let projects = github::get_project_ids(&cred.token, &user.login)?;
-            let items = github::fetch_project_items(&cred.token, &projects[self.project_state].id)?;
+            let items =
+                github::fetch_project_items(&cred.token, &projects[self.config.project_state].id)?;
             let fields =
-                github::fetch_project_fields(&cred.token, &projects[self.project_state].id)?;
+                github::fetch_project_fields(&cred.token, &projects[self.config.project_state].id)?;
 
-            self.user_info = Some(UserInfo {
+            return Ok(UserInfo {
                 user,
                 projects,
                 items,
                 fields,
-            })
+            });
         }
 
+        Err(anyhow!("No user credential loaded"))
+    }
+
+    pub fn reload_info(&mut self) -> anyhow::Result<()> {
+        self.user_info = Some(self.load_info()?); 
         Ok(())
     }
 
@@ -155,6 +187,26 @@ impl App {
                 *index = 0;
             }
         };
+    }
+
+    pub fn shift_project_up(&mut self) {
+        if let Some(app_info) = &self.user_info {
+            self.config.project_state = match self.config.project_state {
+                0 => app_info.projects.len(),
+                _ => self.config.project_state,
+            } - 1;
+            confy::store("projects-tui", "config", &self.config);
+        }
+    }
+
+    pub fn shift_project_down(&mut self) {
+        if let Some(app_info) = &self.user_info {
+            self.config.project_state += 1;
+            if self.config.project_state >= app_info.projects.len() {
+                self.config.project_state = 0;
+            }
+            confy::store("projects-tui", "config", &self.config);
+        }
     }
 
     pub fn begin_editing(&mut self) -> anyhow::Result<()> {
@@ -295,7 +347,7 @@ impl App {
                         .clone()
                         .ok_or_else(|| anyhow!("No Credential found"))?
                         .token,
-                    &app_info.projects[self.project_state].id,
+                    &app_info.projects[self.config.project_state].id,
                     &app_info.items[self.item_state].id,
                     app_info.fields[self.field_state].get_id(),
                     &current_option.id,
@@ -317,7 +369,7 @@ impl App {
                         .clone()
                         .ok_or_else(|| anyhow!("No Credential found"))?
                         .token,
-                    &app_info.projects[self.project_state].id,
+                    &app_info.projects[self.config.project_state].id,
                     &app_info.items[self.item_state].id,
                     app_info.fields[self.field_state].get_id(),
                     text.parse()?,
@@ -342,7 +394,7 @@ impl App {
                         .clone()
                         .ok_or_else(|| anyhow!("No Credential found"))?
                         .token,
-                    &app_info.projects[self.project_state].id,
+                    &app_info.projects[self.config.project_state].id,
                     &app_info.items[self.item_state].id,
                     app_info.fields[self.field_state].get_id(),
                     &format_date,
@@ -364,7 +416,7 @@ impl App {
                         .clone()
                         .ok_or_else(|| anyhow!("No Credential found"))?
                         .token,
-                    &app_info.projects[self.project_state].id,
+                    &app_info.projects[self.config.project_state].id,
                     &app_info.items[self.item_state].id,
                     app_info.fields[self.field_state].get_id(),
                     &text,
@@ -390,6 +442,7 @@ impl App {
     pub fn get_field_at(&self, item: usize, field: usize) -> anyhow::Result<&ProjectV2ItemField> {
         if let Some(app_info) = &self.user_info {
             let index_field = app_info.fields[field].get_name();
+            if app_info.items.len() == 0 { anyhow::bail!("{:?}", self); }
             Ok(app_info.items[item]
                 .field_values
                 .get_from_field(&index_field))
@@ -546,6 +599,19 @@ pub fn normal_mode_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<()> {
 
         KeyCode::Char('i') => app.begin_editing()?,
 
+        KeyCode::Char('p') => app.menu_state = InputMode::SwitchProject,
+
         _ => {}
     })
+}
+
+pub fn switch_project_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<()> {
+    Ok(match key.code {
+        KeyCode::Esc => app.menu_state = InputMode::Normal,
+
+        KeyCode::Char('j') | KeyCode::Down => app.shift_project_down(),
+        KeyCode::Char('k') | KeyCode::Up => app.shift_project_up(),
+
+        _ => {}
+    })   
 }

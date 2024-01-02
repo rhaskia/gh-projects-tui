@@ -1,6 +1,12 @@
-use crate::app::{insert_mode_keys, normal_mode_keys, App, FieldBuffer, InputMode};
-use crate::project::{Field, Item, ProjectV2ItemField};
+use crate::app;
+use crate::github;
+use crate::app::{
+    insert_mode_keys, normal_mode_keys, switch_project_keys, App, FieldBuffer, InputMode, UserInfo,
+};
+use crate::project::{Field, Item, ProjectV2ItemField, User};
 use std::rc::Rc;
+use std::sync::{mpsc, Arc, Mutex, RwLock, RwLockWriteGuard};
+use std::thread;
 
 use crossterm::{
     event::{self, KeyEventKind},
@@ -13,6 +19,7 @@ use ratatui::{prelude::*, widgets::*};
 use std::io::stdout;
 use std::result::Result;
 use std::{cmp, fs, vec};
+use time::{Duration, Instant};
 
 type CTerminal = Terminal<CrosstermBackend<std::io::Stdout>>;
 
@@ -23,16 +30,17 @@ pub fn disable_terminal() -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn draw_app(mut app: App) -> anyhow::Result<App> {
+pub fn start_app(mut app: App) -> anyhow::Result<()> {
     stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
+
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     terminal.clear()?;
 
     // Auth and load info
     let cred = draw_auth(&mut terminal)?;
 
-    let _ = fs::write(
+    let _ = std::fs::write(
         "./access_token",
         serde_json::to_string(&cred).expect("Failed to serialize"),
     );
@@ -43,88 +51,73 @@ pub fn draw_app(mut app: App) -> anyhow::Result<App> {
     // Actual UI once loaded
     draw_projects_editor(&mut app, &mut terminal)?;
 
-    //disable_terminal()?;
-
-    Ok(app)
+    Ok(())
 }
 
-pub fn draw_auth(terminal: &mut CTerminal) -> Result<Credential, DeviceFlowError> {
-    if let Ok(content) = fs::read_to_string("./access_token") {
-        if let Ok(cred) = serde_json::from_str(&content) {
-            return Ok(cred);
-        }
-    }
+pub fn app_updater(
+    token: String,
+    project_state: usize,
+    tx: mpsc::Sender<(app::UserInfo, usize)>,
+) -> anyhow::Result<()> {
+    let user = github::get_user(&token)?;
+    let projects = github::get_project_ids(&token, &user.login)?;
+    let items = github::fetch_project_items(&token, &projects[project_state].id)?;
+    let fields = github::fetch_project_fields(&token, &projects[project_state].id)?;
 
-    let client_id = include_str!("client_id");
-    let scope = Some("project,user");
-    let host = Some("github.com");
-
-    let mut flow = DeviceFlow::start(client_id, host, scope)?;
-
-    terminal
-        .draw(|frame| {
-            let layout = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(vec![
-                    Constraint::Percentage(40),
-                    Constraint::Min(4),
-                    Constraint::Percentage(40),
-                ])
-                .split(frame.size());
-
-            let text = format!(
-                "Please visit https://github.com/login/device \nAnd paste in the code {}",
-                flow.user_code.as_ref().unwrap()
-            );
-
-            frame.render_widget(
-                Paragraph::new(text).block(Block::default().borders(Borders::ALL)),
-                layout[1],
-            );
-        })
-        .expect("Auth rendering failed");
-
-    //thread::sleep(time::Duration::new(1, 0));
-
-    flow.poll(20)
+    Ok(tx.send((
+        app::UserInfo {
+            user,
+            projects,
+            items,
+            fields,
+        },
+        project_state,
+    ))?)
 }
-
-// pub fn draw_error(, error: anyhow::Error) -> anyhow::Result<()> {
-//     let err = format!("{:#?}", error);
-//
-//     terminal.draw(|frame| {
-//         let layout = Layout::default()
-//             .direction(Direction::Vertical)
-//             .constraints(vec![
-//                 Constraint::Min(0),
-//                 Constraint::Max(5),
-//                 Constraint::Min(0),
-//             ])
-//             .split(frame.size());
-//
-//         frame.render_widget(Paragraph::new(err), layout[1]);
-//     })?;
-//
-//     Ok(())
-// }
 
 pub(crate) fn draw_projects_editor(
     mut app: &mut App,
     terminal: &mut CTerminal,
 ) -> anyhow::Result<()> {
-    //let rows = get_rows(&app.items, &app.()fields);
-    let mut n_widths;
-    let mut widths;
-    let mut headers;
+    let mut n_widths = get_widths(&app, &app.info()?.fields, &app.info()?.items);
+    let mut widths = constrained_widths(&n_widths);
+    let mut headers = get_headers(&app.info()?.fields, &n_widths);
     let mut offset = 0;
+    let mut last_refresh = Instant::now();
+
+    let (tx, rx) = mpsc::channel::<(app::UserInfo, usize)>();
 
     loop {
-        n_widths = get_widths(&app, &app.info()?.fields, &app.info()?.items);
-        widths = constrained_widths(&n_widths);
-        headers = get_headers(&app.info()?.fields, &n_widths);
+        match rx.try_recv() {
+            Ok((u, p)) => {
+                if p != app.config.project_state {
+                    return Ok(());
+                }
+                app.user_info = Some(u);
 
+                n_widths = get_widths(&app, &app.info()?.fields, &app.info()?.items);
+                widths = constrained_widths(&n_widths);
+                headers = get_headers(&app.info()?.fields, &n_widths);
+            }
+            Err(_) => {}
+        };
+
+
+        if last_refresh.elapsed().whole_seconds() > 10 {
+            let token = app.id.as_ref().unwrap().token.clone();
+            let proj_id = app.config.project_state;
+            let tx_clone = tx.clone();
+
+            thread::spawn(move || {
+                app_updater(token, proj_id, tx_clone);
+            });
+
+            last_refresh = Instant::now();
+        }
+
+        // Draw app
         terminal.draw(|frame| {
-            // TODO cut this ugly closure up
+            // Split frame into a title section, main and info section
             let layout = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints(vec![
@@ -134,6 +127,7 @@ pub(crate) fn draw_projects_editor(
                 ])
                 .split(frame.size());
 
+            // Title section
             let title_block = Block::default()
                 .borders(Borders::LEFT | Borders::RIGHT | Borders::TOP)
                 .style(Style::default());
@@ -146,6 +140,9 @@ pub(crate) fn draw_projects_editor(
 
             frame.render_widget(title, layout[0]);
 
+            // Find how many fields can be hidden to the left to fit the current
+            // on screen. The -10 can be changed for more comfort, or removed to
+            // avoid breakages
             offset = find_minimum_offset(&n_widths, app.field_state, layout[1].width - 10);
 
             // Layout for Lists
@@ -194,21 +191,36 @@ pub(crate) fn draw_projects_editor(
                 );
             }
 
+            // Side cursor, helps show which item is being edited.
             let cursor_pos = layout[1].height.min(app.item_state as u16 + 3);
             frame.render_widget(Paragraph::new(">"), Rect::new(0, cursor_pos, 1, 1));
 
-            if app.menu_state == InputMode::Input {
-                draw_editor(frame, &app, &lists_layout, offset);
-            }
+            // Extra drawing
+            match app.menu_state {
+                InputMode::Normal => {
+                    draw_editor(frame, &app, &lists_layout, offset);
+                }
+                InputMode::SwitchProject => {
+                    draw_project_list(&mut app, frame);
+                }
+
+                InputMode::LoadingProject => {
+                    draw_info_window("Loading Project", lists_layout[1], frame);
+                }
+
+                _ => {}
+            };
 
             frame.render_widget(guide(&app), layout[2]);
         })?;
 
+        // Event/key management
         if event::poll(std::time::Duration::from_millis(16))? {
             if let event::Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Press {
                     match &app.menu_state {
                         InputMode::Normal => normal_mode_keys(key, &mut app)?,
+                        InputMode::SwitchProject => switch_project_keys(key, &mut app)?,
                         _ => insert_mode_keys(key, &mut app)?,
                     };
                 }
@@ -221,6 +233,71 @@ pub(crate) fn draw_projects_editor(
     }
 }
 
+pub fn draw_auth(terminal: &mut CTerminal) -> Result<Credential, DeviceFlowError> {
+    if let Ok(content) = fs::read_to_string("./access_token") {
+        if let Ok(cred) = serde_json::from_str(&content) {
+            return Ok(cred);
+        }
+    }
+
+    let client_id = include_str!("client_id");
+    let scope = Some("project,user");
+    let host = Some("github.com");
+
+    let mut flow = DeviceFlow::start(client_id, host, scope)?;
+
+    terminal
+        .draw(|frame| {
+            let layout = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(vec![
+                    Constraint::Percentage(40),
+                    Constraint::Min(4),
+                    Constraint::Percentage(40),
+                ])
+                .split(frame.size());
+
+            let text = format!(
+                "Please visit https://github.com/login/device \nAnd paste in the code {}",
+                flow.user_code.as_ref().unwrap()
+            );
+
+            frame.render_widget(
+                Paragraph::new(text).block(Block::default().borders(Borders::ALL)),
+                layout[1],
+            );
+        })
+        .expect("Auth rendering failed");
+
+    //thread::sleep(time::Duration::new(1, 0));
+
+    flow.poll(20)
+}
+
+pub fn draw_project_list(app: &App, frame: &mut Frame) -> anyhow::Result<()> {
+    if let Some(app_info) = &app.user_info {
+        let area = centered_rect(24, app_info.projects.len() as u16 + 3, frame.size());
+        let popup_block = Block::default()
+            .title("Enter a new key-value pair")
+            .borders(Borders::all())
+            .border_type(BorderType::Rounded)
+            .style(Style::default().bg(Color::DarkGray));
+
+        frame.render_widget(popup_block, area);
+    }
+
+    Ok(())
+}
+
+pub fn draw_info_window(info: &str, r: Rect, f: &mut Frame) {
+    let paragraph = Paragraph::new(info).block(
+        Block::default()
+            .borders(Borders::all())
+            .border_type(BorderType::Rounded),
+    );
+
+    f.render_widget(paragraph, r);
+}
 fn draw_editor(
     frame: &mut Frame,
     app: &App,
@@ -315,6 +392,28 @@ fn draw_editor(
     Ok(())
 }
 
+fn centered_rect(width: u16, height: u16, f: Rect) -> Rect {
+    // Cut the given rectangle into three vertical pieces
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length((f.height - height) / 2),
+            Constraint::Length(height),
+            Constraint::Length((f.height - height) / 2),
+        ])
+        .split(f);
+
+    // Then cut the middle vertical piece into three width-wise pieces
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length((f.width - width) / 2),
+            Constraint::Length(width),
+            Constraint::Length((f.width - width) / 2),
+        ])
+        .split(popup_layout[1])[1] // Return the middle chunk
+}
+
 fn state_wrapper(i: usize) -> ListState {
     ListState::default().with_selected(Some(i))
 }
@@ -363,6 +462,7 @@ fn guide<'a>(app: &App) -> Table<'a> {
     let rows_raw = match app.menu_state {
         InputMode::Input => insert_mode_guide(),
         InputMode::Normal => normal_mode_guide(),
+        _ => Vec::new(),
     };
 
     let rows = rows_raw.iter().map(|r| {
