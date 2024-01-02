@@ -481,17 +481,17 @@ fn insert_mode_guide() -> Vec<Vec<(String, String)>> {
     vec![
         vec![
             (String::from("Esc"), String::from(" exit")),
-            (String::from(" "), String::from(" ")),
-            (String::from(" "), String::from(" ")),
-            (String::from(" "), String::from(" ")),
-            (String::from(" "), String::from(" ")),
+            (String::from("i"), String::from(" insert")),
+            (String::from("r"), String::from(" add new")),
+            (String::from("h"), String::from(" left")),
+            (String::from("l"), String::from(" right")),
         ],
         vec![
-            (String::from("Enter"), String::from(" save")),
-            (String::from(" "), String::from(" ")),
-            (String::from(" "), String::from(" ")),
-            (String::from(" "), String::from(" ")),
-            (String::from(" "), String::from(" ")),
+            (String::from("p"), String::from(" switch project")),
+            (String::from("x"), String::from(" hide field")),
+            (String::from("s"), String::from(" sort by")),
+            (String::from("k"), String::from(" up")),
+            (String::from("j"), String::from(" down")),
         ],
     ]
 }
