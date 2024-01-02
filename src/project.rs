@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::*;
 use ratatui::style::{Style, Stylize};
-use time::Date;
+
 
 #[derive(Debug, Deserialize)]
 pub struct User {
@@ -66,13 +66,13 @@ impl ProjectV2ItemField {
         use ProjectV2ItemField::*;
         
         match self {
-            TextValue { text, field } => Style::default(),
-            DateValue { date, field } => Style::default().bold(),
+            TextValue { text: _, field: _ } => Style::default(),
+            DateValue { date: _, field: _ } => Style::default().bold(),
             SingleSelectValue { name, field } => 
                 field.options.iter().find(|v| &v.name == name).unwrap().style() 
             ,
-            NumberValue { number, field } => Style::default().light_blue(),
-            IterationValue { duration, title, field } => Style::default().bold(), 
+            NumberValue { number: _, field: _ } => Style::default().light_blue(),
+            IterationValue { duration: _, title: _, field: _ } => Style::default().bold(), 
             Empty(_) => Style::default(),
         }
     }
@@ -84,12 +84,12 @@ impl Nodes<ProjectV2ItemField> {
 
         self.nodes.iter().find(|v| 
         match v {
-            Empty(v) => "",
-            TextValue { text, field } => &field.get_name(), 
-            DateValue { date, field } => &field.get_name(),
-            SingleSelectValue { name, field } => &field.name,
-            NumberValue { number, field } => &field.get_name(),
-            IterationValue { duration, title, field } => &field.name,
+            Empty(_v) => "",
+            TextValue { text: _, field } => &field.get_name(), 
+            DateValue { date: _, field } => &field.get_name(),
+            SingleSelectValue { name: _, field } => &field.name,
+            NumberValue { number: _, field } => &field.get_name(),
+            IterationValue { duration: _, title: _, field } => &field.name,
         } == s).unwrap_or(&Empty(Value::Null))
     }
 
@@ -105,19 +105,19 @@ impl Nodes<ProjectV2ItemField> {
         if let Some(item_field) = self.nodes.iter_mut().find(|v| 
             match v {
                 Empty(_) => false,
-                TextValue { text, field } => field.get_name() == index,
-                DateValue { date, field } => field.get_name() == index,
-                SingleSelectValue { name, field } => field.name == index,
-                NumberValue { number, field } => field.get_name() == index,
-                IterationValue { duration, title, field } => field.name == index,
+                TextValue { text: _, field } => field.get_name() == index,
+                DateValue { date: _, field } => field.get_name() == index,
+                SingleSelectValue { name: _, field } => field.name == index,
+                NumberValue { number: _, field } => field.get_name() == index,
+                IterationValue { duration: _, title: _, field } => field.name == index,
             }) {
                 match item_field {
                     Empty(_) => {} // Handle Empty variant as needed,
-                    TextValue { text, field } => *text = s,
-                    DateValue { date, field } => *date = s,
-                    SingleSelectValue { name, field } => *name = s,
-                    NumberValue { number, field } => *number = s.parse().unwrap(),
-                    IterationValue { duration, title, field } => *title = s,
+                    TextValue { text, field: _ } => *text = s,
+                    DateValue { date, field: _ } => *date = s,
+                    SingleSelectValue { name, field: _ } => *name = s,
+                    NumberValue { number, field: _ } => *number = s.parse().unwrap(),
+                    IterationValue { duration: _, title, field: _ } => *title = s,
                 };
             }
         }

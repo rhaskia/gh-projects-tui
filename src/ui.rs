@@ -1,11 +1,11 @@
 use crate::app;
 use crate::github;
 use crate::app::{
-    insert_mode_keys, normal_mode_keys, switch_project_keys, App, FieldBuffer, InputMode, UserInfo,
+    insert_mode_keys, normal_mode_keys, switch_project_keys, App, FieldBuffer, InputMode,
 };
-use crate::project::{Field, Item, ProjectV2ItemField, User};
+use crate::project::{Field, Item, ProjectV2ItemField};
 use std::rc::Rc;
-use std::sync::{mpsc, Arc, Mutex, RwLock, RwLockWriteGuard};
+use std::sync::{mpsc};
 use std::thread;
 
 use crossterm::{
@@ -19,7 +19,7 @@ use ratatui::{prelude::*, widgets::*};
 use std::io::stdout;
 use std::result::Result;
 use std::{cmp, fs, vec};
-use time::{Duration, Instant};
+use time::{Instant};
 
 type CTerminal = Terminal<CrosstermBackend<std::io::Stdout>>;
 
@@ -309,7 +309,7 @@ fn draw_editor(
     use ProjectV2ItemField::*;
     match app.get_field_at(app.item_state, app.field_state)? {
         // Pure Text
-        TextValue { text: _, field } | NumberValue { number: _, field } => {
+        TextValue { text: _, field: _ } | NumberValue { number: _, field: _ } => {
             position.y = position.y + (app.item_state as u16);
             position.height = 1;
 
@@ -342,7 +342,7 @@ fn draw_editor(
                     .map(|n| ListItem::new(n.name.clone()).style(n.style()))
                     .collect();
 
-                if let FieldBuffer::SingleSelect(options, index) = &app.input {
+                if let FieldBuffer::SingleSelect(_options, index) = &app.input {
                     frame.render_widget(Clear, position);
 
                     frame.render_stateful_widget(
@@ -358,13 +358,13 @@ fn draw_editor(
 
         //Whatever
         IterationValue {
-            duration,
-            title,
-            field,
+            duration: _,
+            title: _,
+            field: _,
         } => {}
 
         // Date, calendar widget?
-        DateValue { date, field } => {
+        DateValue { date: _, field: _ } => {
             if let FieldBuffer::Date(date) = app.input {
                 let mut events = CalendarEventStore::default();
                 events.add(date, Style::default().on_red());
@@ -386,7 +386,7 @@ fn draw_editor(
         }
 
         // Ignore
-        Empty(v) => {}
+        Empty(_v) => {}
     }
 
     Ok(())

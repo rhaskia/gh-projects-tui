@@ -13,7 +13,7 @@ struct AccessTokenRequest {
     grant_type: String,
 }
 
-use serde_json::{from_value, json};
+use serde_json::{from_value};
 
 pub fn send_query_request(token: &str, query: &str) -> anyhow::Result<Response> {
     let client = reqwest::blocking::Client::new();
@@ -108,7 +108,7 @@ pub fn fetch_project_fields(token: &str, project_id: &str) -> Result<Vec<Field>,
             }
         "#.replace("PROJECT_ID", project_id);
 
-    let client = reqwest::blocking::Client::new();
+    let _client = reqwest::blocking::Client::new();
     let response = send_query_request(&token, &query)?;
     let response_json: Value = response.json()?;
 
@@ -251,7 +251,7 @@ pub fn update_item_number(
     field_id: &str,
     new_number: f32,
 ) -> anyhow::Result<ItemMutation> {
-    let client = reqwest::Client::new();
+    let _client = reqwest::Client::new();
 
     let query = r#"mutation {
         updateProjectV2ItemFieldValue(

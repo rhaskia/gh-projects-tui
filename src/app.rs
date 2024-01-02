@@ -8,7 +8,7 @@ use std::string::String;
 use time::format_description;
 use time::Duration;
 use anyhow::anyhow;
-use tokio::runtime::Runtime;
+
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum InputMode {
@@ -221,7 +221,7 @@ impl App {
                 .get_from_field(&info.fields[self.field_state].get_name());
 
             // Empty item field
-            if let ProjectV2ItemField::Empty(v) = field_value {
+            if let ProjectV2ItemField::Empty(_v) = field_value {
                 info.items[self.item_state]
                     .field_values
                     .nodes
@@ -232,7 +232,7 @@ impl App {
             }
 
             self.input = match field_value {
-                ProjectV2ItemField::SingleSelectValue { name, field } => FieldBuffer::SingleSelect(
+                ProjectV2ItemField::SingleSelectValue { name: _, field } => FieldBuffer::SingleSelect(
                     field.options.clone(),
                     field
                         .options
@@ -242,8 +242,8 @@ impl App {
                 ),
 
                 ProjectV2ItemField::IterationValue {
-                    duration,
-                    title,
+                    duration: _,
+                    title: _,
                     field,
                 } => FieldBuffer::Iteration(
                     field.configuration.iterations.clone(),
@@ -255,11 +255,11 @@ impl App {
                         .unwrap() as u16,
                 ),
 
-                ProjectV2ItemField::TextValue { text, field } => {
+                ProjectV2ItemField::TextValue { text, field: _ } => {
                     FieldBuffer::Text(text.clone(), text.len() as u16)
                 }
 
-                ProjectV2ItemField::DateValue { date, field } => {
+                ProjectV2ItemField::DateValue { date, field: _ } => {
                     let format = format_description::parse("[year]-[month]-[day]")?;
                     FieldBuffer::Date(Date::parse(date, &format)?)
                 }
@@ -267,7 +267,7 @@ impl App {
                 _ => FieldBuffer::None,
             };
 
-            if let ProjectV2ItemField::DateValue { date, field: _ } = field_value {}
+            if let ProjectV2ItemField::DateValue { date: _, field: _ } = field_value {}
         }
 
         Ok(())
@@ -308,27 +308,27 @@ impl App {
     }
 
     pub fn save_field(&mut self) -> anyhow::Result<()> {
-        if let Some(app_info) = &self.user_info {
+        if let Some(_app_info) = &self.user_info {
             use ProjectV2ItemField::*;
 
             match self.get_field_at(self.item_state, self.field_state)? {
-                Empty(v) => {}
-                TextValue { text, field } => {
+                Empty(_v) => {}
+                TextValue { text: _, field: _ } => {
                     self.save_field_text()?;
                 }
-                DateValue { date, field } => {
+                DateValue { date: _, field: _ } => {
                     self.save_field_date()?;
                 }
-                SingleSelectValue { name, field } => {
+                SingleSelectValue { name: _, field: _ } => {
                     self.save_field_option()?;
                 }
-                NumberValue { number, field } => {
+                NumberValue { number: _, field: _ } => {
                     self.save_field_number()?;
                 }
                 IterationValue {
-                    duration,
-                    title,
-                    field,
+                    duration: _,
+                    title: _,
+                    field: _,
                 } => {}
             };
         }
@@ -341,7 +341,7 @@ impl App {
             if let FieldBuffer::SingleSelect(options, index) = &self.input {
                 let current_option = options[*index as usize].clone();
 
-                let mutation = github::update_item_option(
+                let _mutation = github::update_item_option(
                     &self
                         .id
                         .clone()
@@ -362,8 +362,8 @@ impl App {
 
     pub fn save_field_number(&mut self) -> anyhow::Result<()> {
         if let Some(app_info) = &self.user_info {
-            if let FieldBuffer::Text(text, cursor) = &self.input {
-                let mutation = github::update_item_number(
+            if let FieldBuffer::Text(text, _cursor) = &self.input {
+                let _mutation = github::update_item_number(
                     &self
                         .id
                         .clone()
@@ -388,7 +388,7 @@ impl App {
                 let format = format_description::parse("[year]-[month]-[day]")?;
                 let format_date = date.format(&format)?;
 
-                let mutation = github::update_item_date(
+                let _mutation = github::update_item_date(
                     &self
                         .id
                         .clone()
@@ -409,8 +409,8 @@ impl App {
 
     pub fn save_field_text(&mut self) -> anyhow::Result<()> {
         if let Some(app_info) = &self.user_info {
-            if let FieldBuffer::Text(text, cursor_pos) = &self.input {
-                let mutation = github::update_item_text(
+            if let FieldBuffer::Text(text, _cursor_pos) = &self.input {
+                let _mutation = github::update_item_text(
                     &self
                         .id
                         .clone()
@@ -501,12 +501,12 @@ pub fn insert_mode_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<()> {
         _ => {}
     }
 
-    if let Some(app_info) = &app.user_info {
+    if let Some(_app_info) = &app.user_info {
         use ProjectV2ItemField::*;
 
         match app.get_field_at(app.item_state, app.field_state)? {
             // Single select editing
-            SingleSelectValue { name, field } => match key.code {
+            SingleSelectValue { name: _, field: _ } => match key.code {
                 KeyCode::Char('j') | KeyCode::Down => app.shift_option_down(),
                 KeyCode::Char('k') | KeyCode::Up => app.shift_option_up(),
 
@@ -520,7 +520,7 @@ pub fn insert_mode_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<()> {
             },
 
             // Text editing
-            TextValue { text, field } => match key.code {
+            TextValue { text: _, field: _ } => match key.code {
                 KeyCode::Char(a) => app.insert_char(a),
                 KeyCode::Backspace => app.backspace(),
 
@@ -537,7 +537,7 @@ pub fn insert_mode_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<()> {
             },
 
             // Date editing, uses calendar widget
-            DateValue { date, field } => match key.code {
+            DateValue { date: _, field: _ } => match key.code {
                 KeyCode::Left | KeyCode::Char('h') => app.shift_date(1),
                 KeyCode::Right | KeyCode::Char('l') => app.shift_date(-1),
                 KeyCode::Up | KeyCode::Char('k') => app.shift_date(-7),
@@ -557,7 +557,7 @@ pub fn insert_mode_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<()> {
                 _ => {}
             },
 
-            NumberValue { number, field } => match key.code {
+            NumberValue { number: _, field: _ } => match key.code {
                 KeyCode::Char(a) => {
                     if a.is_numeric() {
                         app.insert_char(a);
@@ -577,9 +577,9 @@ pub fn insert_mode_keys(key: KeyEvent, app: &mut App) -> anyhow::Result<()> {
                 _ => {}
             },
             IterationValue {
-                duration,
-                title,
-                field,
+                duration: _,
+                title: _,
+                field: _,
             } => todo!(),
             Empty(_) => todo!(),
         }
