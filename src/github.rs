@@ -203,28 +203,7 @@ pub fn fetch_project_items(token: &str, project_id: &str) -> anyhow::Result<Vec<
                                     }
                                 }
                             }
-                            content {
-                                ... on DraftIssue {
-                                    title
-                                    body
-                                }
-                                ... on Issue {
-                                    title
-                                    assignees(first: 10) {
-                                        nodes {
-                                            login
-                                        }
-                                    }
-                                }
-                                ... on PullRequest {
-                                    title
-                                    assignees(first: 10) {
-                                        nodes {
-                                            login
-                                        }
-                                    }
-                                }
-                            }
+                            type
                         }
                     }
                 }
@@ -355,14 +334,8 @@ pub fn update_item_text(
     let response = send_query_request(token, &query)?;
     let response_json = response.json::<Value>()?;
     
-    panic!("{:?}", response_json);
-
-    if let Some(err) = response_json.get("errors") {
-       if let Some(errors) = err.as_array() {
-           if let Some(error) = errors[0].as_str() {
-               return Err(anyhow!(error.to_owned()));
-           }
-       }
+    if let Value::String(err) = &response_json["errors"][0]["message"] {
+       return Err(anyhow!(err.to_owned()));
     }
 
     let mutation = &response_json["data"]["updateProjectV2ItemFieldValue"]["projectV2Item"];
@@ -402,6 +375,11 @@ pub fn update_item_option(
 
     let response = send_query_request(token, &query)?;
     let response_json = response.json::<Value>()?;
+
+    if let Value::String(err) = &response_json["errors"][0]["message"] {
+       return Err(anyhow!(err.to_owned()));
+    }
+
     let mutation = &response_json["data"]["updateProjectV2ItemFieldValue"]["projectV2Item"];
 
     Ok(serde_json::from_value(mutation.clone())?)
@@ -412,7 +390,7 @@ pub fn add_draft_issue(
     project_id: &str,
     body: &str,
     title: &str,
-) -> anyhow::Result<String> {
+) -> anyhow::Result<Item> {
     let query = r#"mutation {
         addProjectV2DraftIssue(
             input: {
@@ -423,6 +401,7 @@ pub fn add_draft_issue(
         ) {
             projectItem {
                 id
+                type
             }
         }
     }"#;
@@ -433,8 +412,13 @@ pub fn add_draft_issue(
         .replace("BODY", body);
 
     let response = send_query_request(token, &query)?;
+    let response_json = response.json::<Value>()?;
 
-    println!("{:?}", response.text());
+    if let Value::String(err) = &response_json["errors"][0]["message"] {
+       return Err(anyhow!(err.to_owned()));
+    }
 
-    Ok(String::new())
+    let mutation = &response_json["data"]["addProjectV2DraftIssue"]["projectItem"];
+
+    Ok(serde_json::from_value(mutation.clone())?)
 }

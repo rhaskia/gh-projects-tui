@@ -1,8 +1,8 @@
-use crate::app;
-use crate::github;
+use crate::app::{self, add_item_keys};
 use crate::app::{
     insert_mode_keys, normal_mode_keys, switch_project_keys, App, FieldBuffer, InputMode,
 };
+use crate::github;
 use crate::project::{Field, Item, ProjectV2ItemField};
 use std::rc::Rc;
 use std::sync::mpsc;
@@ -75,10 +75,7 @@ pub fn app_updater(
     ))?)
 }
 
-pub(crate) fn draw_projects_editor(
-    mut app: App,
-    terminal: &mut CTerminal,
-) -> anyhow::Result<()> {
+pub(crate) fn draw_projects_editor(mut app: App, terminal: &mut CTerminal) -> anyhow::Result<()> {
     let mut n_widths = get_widths(&app, &app.info()?.fields, &app.info()?.items);
     let mut widths = constrained_widths(&n_widths);
     let mut headers = get_headers(&app.info()?.fields, &n_widths);
@@ -93,6 +90,10 @@ pub(crate) fn draw_projects_editor(
                 if p != app.config.project_state {
                     return Ok(());
                 }
+                if let InputMode::LoadingProject = app.menu_state {
+                    app.menu_state = InputMode::Normal;
+                }
+
                 app.user_info = Some(u);
 
                 n_widths = get_widths(&app, &app.info()?.fields, &app.info()?.items);
@@ -102,17 +103,15 @@ pub(crate) fn draw_projects_editor(
             Err(_) => {}
         };
 
-
-        if last_refresh.elapsed().whole_seconds() > 10 {
+        if last_refresh.elapsed().whole_seconds() > 10 || app.reload {
             let token = app.id.as_ref().unwrap().token.clone();
             let proj_id = app.config.project_state;
             let tx_clone = tx.clone();
 
-            thread::spawn(move || -> anyhow::Result<()> {
-                app_updater(token, proj_id, tx_clone)
-            });
+            thread::spawn(move || -> anyhow::Result<()> { app_updater(token, proj_id, tx_clone) });
 
             last_refresh = Instant::now();
+            app.reload = false;
         }
 
         // Draw app
@@ -182,7 +181,7 @@ pub(crate) fn draw_projects_editor(
                 frame.render_stateful_widget(
                     draw_list(&app.info().unwrap().items, &app.info().unwrap().fields, i)
                         .highlight_style(if i == app.field_state {
-                           Style::default().reversed() 
+                            Style::default().reversed()
                         } else {
                             Style::not_reversed(Default::default())
                         }),
@@ -197,16 +196,11 @@ pub(crate) fn draw_projects_editor(
 
             // Extra drawing
             match app.menu_state {
-                InputMode::Input => {
-                    // Unwrap unwinds the closure hopefully
-                    draw_editor(frame, &app, &lists_layout, offset).unwrap();
-                }
-                InputMode::SwitchProject => {
-                    draw_project_list(&mut app, frame).unwrap();
-                }
-                InputMode::LoadingProject => {
-                    draw_info_window("Loading Project", lists_layout[1], frame);
-                }
+                InputMode::Input => draw_editor(frame, &app, &lists_layout, offset).unwrap(),
+                InputMode::SwitchProject(p) => draw_project_list(&mut app, frame, p).unwrap(),
+                InputMode::LoadingProject => draw_info_window("Loading Project", layout[1], frame),
+                InputMode::Error(ref err) => draw_info_window(&format!("{err}\n\nHit Esc to close."), layout[1], frame),
+                InputMode::AddItem(ref s, _) => draw_info_window(&format!("Add Item: {s}"), layout[1], frame),
 
                 _ => {}
             };
@@ -220,7 +214,8 @@ pub(crate) fn draw_projects_editor(
                 if key.kind == KeyEventKind::Press {
                     match &app.menu_state {
                         InputMode::Normal => normal_mode_keys(key, &mut app)?,
-                        InputMode::SwitchProject => switch_project_keys(key, &mut app)?,
+                        InputMode::SwitchProject(_) => switch_project_keys(key, &mut app)?,
+                        InputMode::AddItem(_, _) => add_item_keys(key, &mut app)?,
                         _ => insert_mode_keys(key, &mut app)?,
                     };
                 }
@@ -230,7 +225,7 @@ pub(crate) fn draw_projects_editor(
         if app.exit {
             return Ok(());
         }
-        
+
         if let Err(err) = app.error_hook {
             return Err(err);
         }
@@ -278,30 +273,57 @@ pub fn draw_auth(terminal: &mut CTerminal) -> Result<Credential, DeviceFlowError
     flow.poll(20)
 }
 
-pub fn draw_project_list(app: &App, frame: &mut Frame) -> anyhow::Result<()> {
+pub fn draw_project_list(app: &App, frame: &mut Frame, index: usize) -> anyhow::Result<()> {
     if let Some(app_info) = &app.user_info {
-        let area = centered_rect(24, app_info.projects.len() as u16 + 3, frame.size());
-        let popup_block = Block::default()
-            .title("Enter a new key-value pair")
-            .borders(Borders::all())
-            .border_type(BorderType::Rounded)
-            .style(Style::default().bg(Color::DarkGray));
+        if let InputMode::SwitchProject(index) = &app.menu_state {
+            let width = app_info
+                .projects
+                .iter()
+                .fold(14, |max, accum| cmp::max(max, accum.title.len()));
+            let text = app_info
+                .projects
+                .iter()
+                .map(|p| ListItem::new(p.title.clone()));
 
-        frame.render_widget(popup_block, area);
+            let area = centered_rect(
+                width as u16 + 2,
+                app_info.projects.len() as u16 + 2,
+                frame.size(),
+            );
+            let popup_block = Block::default()
+                .title("Switch project".bold())
+                .borders(Borders::all())
+                .border_type(BorderType::Rounded);
+
+            let list = List::new(text)
+                .block(popup_block)
+                .highlight_style(Style::default().bold().light_blue());
+
+            frame.render_stateful_widget(list, area, &mut state_wrapper(*index));
+        }
     }
 
     Ok(())
 }
 
-pub fn draw_info_window(info: &str, r: Rect, f: &mut Frame) {
-    let paragraph = Paragraph::new(info).block(
+pub fn draw_info_window(text: &str, r: Rect, f: &mut Frame) {
+    let lines = text.lines().count();
+    let width = text
+        .lines()
+        .fold(0, |max, accum| cmp::max(max, accum.len()));
+
+    let paragraph = Paragraph::new(text).block(
         Block::default()
             .borders(Borders::all())
             .border_type(BorderType::Rounded),
     );
 
-    f.render_widget(paragraph, r);
+    f.render_widget(
+        paragraph,
+        centered_rect(width as u16 + 4, lines as u16 + 2, r),
+    );
 }
+
 fn draw_editor(
     frame: &mut Frame,
     app: &App,
@@ -313,7 +335,11 @@ fn draw_editor(
     use ProjectV2ItemField::*;
     match app.get_field_at(app.item_state, app.field_state)? {
         // Pure Text
-        TextValue { text: _, field: _ } | NumberValue { number: _, field: _ } => {
+        TextValue { text: _, field: _ }
+        | NumberValue {
+            number: _,
+            field: _,
+        } => {
             position.y = position.y + (app.item_state as u16);
             position.height = 1;
 
@@ -465,8 +491,8 @@ fn draw_list<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) -> 
 fn guide<'a>(app: &App) -> Table<'a> {
     let rows_raw = match app.menu_state {
         InputMode::Input => insert_mode_guide(),
-        InputMode::Normal => normal_mode_guide(),
-        _ => Vec::new(),
+        InputMode::SwitchProject(_) => switch_proj_guide(),
+        _ => normal_mode_guide(),
     };
 
     let rows = rows_raw.iter().map(|r| {
@@ -476,9 +502,22 @@ fn guide<'a>(app: &App) -> Table<'a> {
         )
     });
 
-    let widths = vec![Constraint::Percentage(20); 5]; 
+    let widths = vec![Constraint::Percentage(20); 5];
 
     Table::new(rows, widths)
+}
+
+fn switch_proj_guide() -> Vec<Vec<(String, String)>> {
+    vec![
+        vec![
+            (String::from("Esc"), String::from(" exit")),
+            (String::from("j"), String::from(" down")),
+        ],
+        vec![
+            (String::from("Enter"), String::from(" select")),
+            (String::from("k"), String::from(" up")),
+        ],
+    ]
 }
 
 fn insert_mode_guide() -> Vec<Vec<(String, String)>> {
@@ -530,7 +569,9 @@ fn get_column<'a>(items: &'a Vec<Item>, fields: &'a Vec<Field>, index: usize) ->
 }
 
 fn constrained_widths(i: &Vec<u16>) -> Vec<Constraint> {
-    i.iter().map(|f| Constraint::Min(*f)).collect()
+    let mut widths: Vec<Constraint> = i.iter().map(|f| Constraint::Length(*f)).collect();
+    widths.push(Constraint::Min(0));
+    widths
 }
 
 fn get_widths(app: &App, fields: &Vec<Field>, items: &Vec<Item>) -> Vec<u16> {

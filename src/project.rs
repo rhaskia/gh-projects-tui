@@ -12,8 +12,10 @@ pub struct User {
 #[serde(rename_all = "camelCase")]
 pub struct Item {
     pub id: String,
+    #[serde(default)]
     pub field_values: Nodes<ProjectV2ItemField>,
-    pub content: Option<Content>,
+    #[serde(rename(deserialize = "type"))]
+    pub item_type: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -159,6 +161,12 @@ pub struct Nodes<T> {
     pub nodes: Vec<T>,
 }
 
+impl Default for Nodes<ProjectV2ItemField> {
+    fn default() -> Nodes<ProjectV2ItemField> {
+        Nodes { nodes: Vec::new() }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Project {
     pub id: String,
@@ -204,7 +212,7 @@ impl Field {
     }
 
     pub fn is_editable(&self) -> bool {
-        vec!["DATE", "NUMBER", "TEXT", "TITLE", "SINGLE_SELECT", "ITERATION"].contains(&self.get_type())
+        vec!["DATE", "NUMBER", "TEXT", "TITLE", "SINGLE_SELECT"].contains(&self.get_type())
     }
 
     pub fn default(&self) -> ProjectV2ItemField {

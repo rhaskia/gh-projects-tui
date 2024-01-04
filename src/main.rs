@@ -1,5 +1,3 @@
-
-
 mod app;
 mod github;
 mod project;
